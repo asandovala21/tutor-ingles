@@ -9,6 +9,7 @@ import {
   settings, progress, saveSettings, saveProgress, resetProgress, logErrors, markIntroduced, recordModuleSession,
   listTranscripts, saveTranscript, deleteTranscript, exportAll, importAll,
 } from './store.js';
+import { pdfToText } from './pdf.js';
 import { speak, stopSpeaking, listen, canListen, avatarSVG, animateMouth, compareWords, englishVoices, hasVoiceFor } from './speech.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -160,11 +161,11 @@ async function renderMeeting() {
 
     <section class="card">
       <h2>Mis transcripciones (${transcripts.length})</h2>
-      <p class="muted">Sube tus transcripciones de reuniones (.txt, .vtt, .docx exportado a texto) o pégalas. Se guardan en el teléfono y se envían a Claude solo cuando simulas esa reunión.</p>
+      <p class="muted">Sube tus transcripciones de reuniones (PDF, .txt, .vtt) o pégalas. Los PDF se convierten a texto en el teléfono, así gastas menos créditos. Se guardan en el teléfono y se envían a Claude solo cuando simulas esa reunión.</p>
       <ul class="list">
-        ${transcripts.map((t) => `<li><span>${esc(t.name)} <small class="muted">${Math.round(t.text.length / 1000)}k car.</small></span><button class="mini-btn danger" data-del="${t.id}">🗑️</button></li>`).join('') || '<li class="muted">Aún no hay transcripciones.</li>'}
+        ${transcripts.map((t) => `<li><span>${esc(t.name)} <small class="muted">${Math.round(t.text.length / 1000)}k car.</small></span><span><button class="mini-btn" data-view="${t.id}" aria-label="Ver texto">👁️</button><button class="mini-btn danger" data-del="${t.id}">🗑️</button></span></li><li class="t-preview" id="pv-${t.id}" hidden><pre>${esc(t.text.slice(0, 3000))}${t.text.length > 3000 ? '\n…' : ''}</pre></li>`).join('') || '<li class="muted">Aún no hay transcripciones.</li>'}
       </ul>
-      <label class="file-btn secondary">📄 Subir archivos<input id="t-files" type="file" accept=".txt,.vtt,.srt,.md,text/plain" multiple hidden /></label>
+      <label class="file-btn secondary">📄 Subir archivos<input id="t-files" type="file" accept=".pdf,.txt,.vtt,.srt,.md,application/pdf,text/plain" multiple hidden /></label>
       <details>
         <summary>Pegar texto</summary>
         <input id="t-name" type="text" placeholder="Nombre (p. ej. Weekly Ops 12-Sep)" />
@@ -196,8 +197,27 @@ async function renderMeeting() {
   );
 
   $('#t-files').addEventListener('change', async (e) => {
-    for (const f of e.target.files) await saveTranscript(f.name.replace(/\.[^.]+$/, ''), await f.text());
-    toast(`${e.target.files.length} transcripción(es) guardada(s)`);
+    let saved = 0;
+    for (const f of e.target.files) {
+      const name = f.name.replace(/\.[^.]+$/, '');
+      try {
+        let text;
+        if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+          ({ text } = await pdfToText(f, (i, n) => toast(`Convirtiendo ${name}: página ${i}/${n}…`, 60000)));
+          if (text.length < 50) {
+            toast(`"${name}" parece un PDF escaneado (imagen): no tiene texto que extraer.`, 7000);
+            continue;
+          }
+        } else {
+          text = await f.text();
+        }
+        await saveTranscript(name, text);
+        saved++;
+      } catch (err) {
+        showError(new TutorError(`No se pudo leer "${name}": ${err.message}`));
+      }
+    }
+    if (saved) toast(`${saved} transcripción(es) guardada(s)`);
     renderMeeting();
   });
   $('#t-save').addEventListener('click', async () => {
@@ -206,6 +226,12 @@ async function renderMeeting() {
     await saveTranscript($('#t-name').value.trim() || `Reunión ${new Date().toLocaleDateString()}`, text);
     renderMeeting();
   });
+  view.querySelectorAll('[data-view]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const pv = $(`#pv-${b.dataset.view}`);
+      pv.hidden = !pv.hidden;
+    }),
+  );
   view.querySelectorAll('[data-del]').forEach((b) =>
     b.addEventListener('click', async () => {
       if (!confirm('¿Borrar esta transcripción?')) return;

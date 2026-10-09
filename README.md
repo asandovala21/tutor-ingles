@@ -3,7 +3,8 @@
 App para el celular (Android) para practicar inglés para las reuniones en BHP:
 
 - **🗣️ Reunión**: un monito que mueve la boca te habla con acento **australiano** (Mick, Sarah) o **indio-australiano** (Priya, Arjun). Le respondes hablando y, después de cada intervención, te corrige la gramática, te muestra cómo lo diría un nativo y, **aprovechando la corrección, te enseña gramática que todavía no has visto** (present perfect continuous, future perfect, would condicional, reported speech, etc.). Después usa esa estructura en la conversación para que la practiques.
-  - Puedes elegir un **escenario** (safety share, reunión semanal de operaciones, shutdown, ICAM, status update, KPIs, 1:1, small talk…) o **subir tus transcripciones reales** para simular esas reuniones.
+  - Puedes elegir un **escenario** (safety share, reunión semanal de operaciones, shutdown, ICAM, status update, KPIs, 1:1, small talk…) o **subir tus transcripciones reales** (PDF, .txt, .vtt) para simular esas reuniones.
+  - Los **PDF se convierten a texto en el mismo teléfono** (con pdf.js) antes de guardarlos: a Claude solo le llega el texto, que cuesta mucho menos que enviar el PDF. Con 👁️ puedes revisar el texto extraído. Los PDF escaneados (fotos de páginas) no tienen texto y no se pueden convertir.
   - Opcional: fija un **foco gramatical** para la reunión.
   - **⏹️ Terminar** te da un resumen: fortalezas, errores que se repiten y qué practicar.
 - **📘 Gramática**: 25 temas avanzados, cada uno con **máximo 5 sesiones** (explicación → práctica → traducción → hablar → evaluación), con ejercicios corregidos y ejemplos de BHP.
@@ -57,6 +58,8 @@ js/prompts.js         prompts de sistema y esquemas JSON
 js/curriculum.js      gramática conocida/por aprender, personajes, escenarios, frases
 js/speech.js          voz (hablar/escuchar), avatar animado, comparación de palabras
 js/store.js           ajustes/progreso (localStorage) y transcripciones (IndexedDB)
+js/pdf.js             conversión de PDF a texto en el teléfono
+vendor/pdfjs/         pdf.js 6.3.289 (Mozilla, Apache-2.0)
 vendor/anthropic-sdk.js  SDK oficial @anthropic-ai/sdk 0.129.0 empaquetado
 sw.js, manifest.webmanifest  instalación como app (PWA)
 ```
