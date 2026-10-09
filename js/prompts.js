@@ -2,13 +2,17 @@
 import { KNOWN_GRAMMAR, GRAMMAR_TOPICS, MAX_SESSIONS, topicById } from './curriculum.js';
 import { progress } from './store.js';
 
-const LEARNER_PROFILE = `The learner is a Spanish-speaking professional from Chile who works with BHP (mining: Escondida, Spence, Pampa Norte, Minerals Americas) and attends meetings in English with Australian colleagues, including Indian-Australians. Goals: speak with confidence in meetings, improve grammar, pronunciation and fluency, and understand Australian and Indian-Australian accents.
+const LEARNER_PROFILE = `The learner is a Spanish-speaking professional from Chile who works in Data & Digital (Technology, BHP Minerals Americas, sites like Escondida and Spence). Their meetings in English are with global teams in Australia (data utilities / data engineering, platform and architecture teams, cybersecurity, project managers) and with vendors. Many Australian colleagues are Indian-Australian. Typical topics: integrating vendor APIs and equipment data into Snowflake (RAW / QA / Conformed layers), data paths from mobile equipment to the cloud (OT / IT / DMZ, VPN, LTE networks, field gateways), 1 Hz data vs batch vs real-time, data volume and completeness, support models (global vs local, knowledge transfer, transition to operations), governance (HLD, architecture panel, CIA rating, cybersecurity assessments), cost estimates and vendor quotes, data quality, reusable ingestion patterns, project status updates, and following up on open actions.
+
+Goals: speak with confidence in these meetings, improve grammar, pronunciation and fluency, and understand Australian and Indian-Australian accents.
+
+The learner prepares meetings in deliberately simple, clear English (short sentences, one idea each). Value clarity: never push them to sound complicated. Help them sound natural and professional, using the kind of phrases their colleagues actually use, for example: "Does that make sense?", "What I'm saying is…", "If I understand correctly…", "Could you confirm whether…?", "It might be worth…", "I get that, but…", "Let's circle back on that", "Can we record this as an open action?", "I'll follow up by email", "We're at time".
 
 Grammar the learner already handles: ${KNOWN_GRAMMAR.join('; ')}.
 
-Grammar the learner does NOT handle yet (curriculum, by id): ${GRAMMAR_TOPICS.map((t) => `${t.id} = ${t.title}`).join('; ')}.
+Grammar the learner does NOT handle yet (curriculum, by id; level 1 = most used in their real meetings): ${GRAMMAR_TOPICS.map((t) => `${t.id} (L${t.level}) = ${t.title}`).join('; ')}.
 
-All explanations for the learner are written in Spanish (Chilean-friendly, clear, no jargon). All examples and role-play speech are in English. Context is always BHP / mining / corporate meetings (safety, production, maintenance, shutdowns, projects, KPIs, stakeholders).`;
+All explanations for the learner are written in Spanish (Chilean-friendly, clear, no jargon). All examples and role-play speech are in English. Context is always BHP data, technology and project meetings.`;
 
 function progressBlock() {
   const introduced = progress.introduced.map((id) => topicById(id)?.title || id);
@@ -99,7 +103,7 @@ ${transcript}
 - corrected: the learner's utterance with grammar fixed minimally (empty string if it was already correct).
 - better_native: how a fluent professional at BHP would say it (more natural / diplomatic).
 - errors: every real grammar/vocabulary error with a short Spanish explanation. grammar_topic must be one of the curriculum ids above, or "known" if it's about grammar they already handle, or "vocab" for word choice.
-- new_grammar: THIS IS KEY. Use the correction moment to introduce ONE grammar point from the curriculum that the learner has NOT been introduced to yet (see progress), preferably one that fits what they just tried to say (e.g. they said "I work here since 2020" -> introduce present perfect continuous). Explain it briefly in Spanish with 2 BHP examples. Then in your next turns, use that structure in your "reply" and ask questions that make the learner use it. If no new point fits naturally this turn, return topic_id "" and empty fields. Don't introduce a new point every single turn: about every 2-3 turns is right.
+- new_grammar: THIS IS KEY. Use the correction moment to introduce ONE grammar point from the curriculum that the learner has NOT been introduced to yet (see progress), preferably one that fits what they just tried to say, and prefer level-1 topics first (e.g. they said "I work here since 2020" -> introduce present perfect continuous). Explain it briefly in Spanish with 2 BHP examples. Then in your next turns, use that structure in your "reply" and ask questions that make the learner use it. If no new point fits naturally this turn, return topic_id "" and empty fields. Don't introduce a new point every single turn: about every 2-3 turns is right.
 - pronunciation: the learner's text comes from speech recognition. Words that the recognizer got wrong or with low confidence probably reveal pronunciation problems (typical Spanish-speaker issues: th, v/b, short i vs long ee, -ed endings, initial s+consonant, schwa, word stress, h). Give 0-3 tips in Spanish for words that matter. Empty array if typed or nothing notable.
 - When the user message is [START], open the meeting naturally (greeting + small talk or first agenda item), with empty feedback (empty strings and arrays, new_grammar.topic_id "").
 - When the user message is [END], close the meeting politely in "reply", and in feedback.overall_es give a summary in Spanish of the whole session: strengths, top 3 recurring mistakes, grammar introduced and what to practise next.`;
@@ -169,7 +173,7 @@ export function lessonSystem() {
   return [
     {
       type: 'text',
-      text: `You are an expert English grammar teacher creating short, practical lessons for a BHP professional.\n\n${LEARNER_PROFILE}\n\nEach topic has at most ${MAX_SESSIONS} sessions. Make every example and exercise about BHP-style work: meetings with Perth/Brisbane, safety, production, maintenance, shutdowns, projects, KPIs, emails and reports. Be concise: a lesson should take about 10 minutes.`,
+      text: `You are an expert English grammar teacher creating short, practical lessons for a BHP professional.\n\n${LEARNER_PROFILE}\n\nEach topic has at most ${MAX_SESSIONS} sessions. Make every example and exercise about the learner's real work: Teams meetings with Perth/Brisbane, data integration, APIs, Snowflake, architecture, vendors, support models, governance, project status, emails and follow-ups. Be concise: a lesson should take about 10 minutes.`,
       cache_control: { type: 'ephemeral' },
     },
     { type: 'text', text: progressBlock() },

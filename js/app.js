@@ -1,5 +1,5 @@
 import { askJSON, MODELS, TutorError } from './claude.js';
-import { CHARACTERS, SCENARIOS, GRAMMAR_TOPICS, PRON_SETS, MAX_SESSIONS, characterById, topicById } from './curriculum.js';
+import { CHARACTERS, SCENARIOS, GRAMMAR_TOPICS, PRON_SETS, PHRASE_GROUPS, MAX_SESSIONS, characterById, topicById } from './curriculum.js';
 import {
   meetingSystem, learnerTurnText, MEETING_SCHEMA,
   lessonSystem, lessonRequest, LESSON_SCHEMA, gradeRequest, GRADE_SCHEMA,
@@ -266,7 +266,7 @@ function renderMeetingLive() {
       <div class="avatar" id="avatar">${avatarSVG(c)}</div>
       <div class="stage-info">
         <strong id="speaker">${c.name}</strong>
-        <small class="muted">${esc(c.role)}</small>
+        <small class="muted">${esc(c.role.split(". ")[0])}</small>
         <small class="muted">${esc(meeting.config.scenario.title)}</small>
       </div>
       <div class="stage-actions">
@@ -408,11 +408,12 @@ async function meetingTurn(text, stt) {
 const lesson = { topic: null, n: 0, data: null, history: [] };
 
 function renderGrammar() {
-  const levelName = { 1: 'Esencial', 2: 'Intermedio-avanzado', 3: 'Avanzado' };
+  const levelName = { 1: 'Prioridad 1 · lo más usado en tus reuniones', 2: 'Prioridad 2 · frecuente', 3: 'Avanzado' };
   view.innerHTML = `
     <section class="card">
       <h2>Módulos de gramática</h2>
-      <p class="muted">Cada tema tiene hasta ${MAX_SESSIONS} sesiones: 1) explicación, 2) práctica, 3) traducción, 4) hablar, 5) evaluación. Los ejemplos son de reuniones y trabajo en BHP.</p>
+      <p class="muted">Cada tema tiene hasta ${MAX_SESSIONS} sesiones: 1) explicación, 2) práctica, 3) traducción, 4) hablar, 5) evaluación. El orden y los ejemplos salen de tus reuniones reales. ⭐ = aparece mucho en tus reuniones.</p>
+      <button id="phrases" class="secondary big">💬 Frases de reunión para escuchar y repetir</button>
     </section>
     ${[1, 2, 3].map((lvl) => `
       <section class="card">
@@ -422,7 +423,7 @@ function renderGrammar() {
             const done = progress.modules[t.id]?.sessions || [];
             const intro = progress.introduced.includes(t.id);
             return `<li><button class="topic" data-id="${t.id}">
-              <span><strong>${esc(t.title)}</strong>${intro ? ' <span class="tag">visto en reunión</span>' : ''}<br><small class="muted">${esc(t.es)}</small></span>
+              <span><strong>${t.star ? '⭐ ' : ''}${esc(t.title)}</strong>${intro ? ' <span class="tag">visto en reunión</span>' : ''}<br><small class="muted">${esc(t.es)}</small></span>
               <span class="dots5">${Array.from({ length: MAX_SESSIONS }, (_, i) => {
                 const s = done.find((d) => d.n === i + 1);
                 return `<i class="${s ? (s.score >= 70 ? 'ok' : 'meh') : ''}"></i>`;
@@ -432,6 +433,23 @@ function renderGrammar() {
         </ul>
       </section>`).join('')}`;
   view.querySelectorAll('.topic').forEach((b) => b.addEventListener('click', () => renderTopic(topicById(b.dataset.id))));
+  $('#phrases').addEventListener('click', renderPhrases);
+}
+
+function renderPhrases() {
+  view.innerHTML = `
+    <button class="link" id="back">← Temas</button>
+    <section class="card">
+      <h2>Frases de reunión</h2>
+      <p class="muted">Expresiones que usan tus colegas en reuniones reales. Toca 🔊 para escucharlas con acento australiano y repítelas en voz alta.</p>
+    </section>
+    ${PHRASE_GROUPS.map((g, gi) => `
+      <section class="card">
+        <h3>${esc(g.title)}</h3>
+        <ul class="examples">${g.items.map(([en, es], i) => `<li data-g="${gi}" data-i="${i}"><span><b>${esc(en)}</b><br><small class="muted">${esc(es)}</small></span></li>`).join('')}</ul>
+      </section>`).join('')}`;
+  $('#back').addEventListener('click', renderGrammar);
+  view.querySelectorAll('.examples li').forEach((li) => li.append(speakBtn(PHRASE_GROUPS[li.dataset.g].items[li.dataset.i][0])));
 }
 
 function renderTopic(topic) {
@@ -681,7 +699,7 @@ async function moreSentences(e) {
   try {
     const { data } = await askJSON({
       system: pronSystem(),
-      messages: [{ role: 'user', content: `Write 6 new sentences (8-16 words) to practise "${pron.set.title}" (${pron.set.tip}). Each must contain several words with this sound, in BHP meeting/mining context${pron.mode === 'listen' ? ', using natural Australian or Indian-Australian expressions a colleague would say' : ''}. Avoid these: ${pron.sentences.join(' | ')}` }],
+      messages: [{ role: 'user', content: `Write 6 new sentences (8-16 words) to practise "${pron.set.title}" (${pron.set.tip}). Each must contain several words with this sound, in BHP data & technology meeting context (APIs, Snowflake, architecture, vendors, project status)${pron.mode === 'listen' ? ', using natural Australian or Indian-Australian expressions a colleague would say' : ''}. Avoid these: ${pron.sentences.join(' | ')}` }],
       schema: PRON_SENTENCES_SCHEMA,
     });
     pron.sentences.push(...data.sentences);
