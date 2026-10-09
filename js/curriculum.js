@@ -37,7 +37,7 @@ export const GRAMMAR_TOPICS = [
   // ---- Prioridad 2 ----
   { id: 'present-perfect-continuous', level: 2, star: true, title: 'Present perfect continuous', es: "We've been collecting this data since early 2026" },
   { id: 'future-continuous', level: 2, title: 'Future continuous', es: "The global team will be moving the data / I'll be working with you on this" },
-  { id: 'future-time-clauses', level: 2, star: true, title: 'Futuro con when / once / until / as soon as', es: "Once we agree on the scope, we'll update the plan / until the PTX is migrated" },
+  { id: 'future-time-clauses', level: 2, star: true, title: 'Futuro con when / once / until / as soon as', es: "Once we agree on the scope, we'll update the plan / until the old servers are migrated" },
   { id: 'past-modals', level: 2, star: true, title: 'Modales en pasado (should have, could have, would have)', es: 'We probably should have asked you earlier / I would have liked to go further' },
   { id: 'phrasal-verbs', level: 2, star: true, title: 'Phrasal verbs de trabajo', es: 'set up, bring up, jump in, sort out, circle back, catch up, pull together, run out of, follow up' },
   { id: 'linking-words', level: 2, title: 'Conectores formales', es: 'however, therefore, regarding, in terms of, essentially, with that in mind, otherwise' },
