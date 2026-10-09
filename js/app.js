@@ -75,6 +75,12 @@ function attachMic(button, input, { onDone } = {}) {
     busy = true;
     stopSpeaking();
     button.classList.add('recording');
+    const label = button.textContent;
+    const placeholder = input.placeholder;
+    button.textContent = '⏹️';
+    input.placeholder = 'Escuchando… habla con calma. Toca ⏹️ cuando termines.';
+    input.value = '';
+    toast('🎤 Escuchando. Puedes hacer pausas: toca ⏹️ cuando termines.', 4000);
     try {
       const res = await listen({ onInterim: (t) => (input.value = t) });
       input.value = res.text;
@@ -85,6 +91,8 @@ function attachMic(button, input, { onDone } = {}) {
     } finally {
       busy = false;
       button.classList.remove('recording');
+      button.textContent = label;
+      input.placeholder = placeholder;
     }
   });
   input.addEventListener('input', () => delete input.dataset.stt);
@@ -278,7 +286,7 @@ function renderMeetingLive() {
     <div id="chat" class="chat"></div>
     <div class="composer">
       <button id="mic" class="mic" aria-label="Hablar">🎤</button>
-      <textarea id="msg" rows="1" placeholder="Habla con 🎤 o escribe…"></textarea>
+      <textarea id="msg" rows="1" placeholder="Toca 🎤, habla y toca ⏹️ al terminar (o escribe)"></textarea>
       <button id="send" class="primary" aria-label="Enviar">➤</button>
     </div>`;
 
@@ -645,6 +653,7 @@ function renderPron() {
       rec.classList.add('recording');
       rec.textContent = '⏹️ Detener';
       try {
+        toast('🎤 Lee la frase. Toca ⏹️ Detener cuando termines.', 3000);
         const res = await listen({ onInterim: (t) => ($('#heard').textContent = `Escuché: ${t}`) });
         showPronResult(sentence, res);
       } catch (e) {

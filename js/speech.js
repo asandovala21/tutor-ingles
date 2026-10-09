@@ -71,65 +71,129 @@ export function stopSpeaking() {
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const canListen = !!Recognition;
 
+// Chrome en Android repite resultados ("hello", "hello hello"…) en modo continuo.
+// Unimos los fragmentos descartando los que ya están contenidos en el anterior.
+function collapse(parts) {
+  const out = [];
+  for (const raw of parts) {
+    const t = raw.trim();
+    if (!t) continue;
+    const last = out[out.length - 1];
+    const lt = t.toLowerCase();
+    const ll = last?.toLowerCase();
+    if (ll && (lt === ll || ll.endsWith(lt))) continue;
+    if (ll && lt.startsWith(ll)) {
+      out[out.length - 1] = t;
+      continue;
+    }
+    out.push(t);
+  }
+  return out;
+}
+
+/** Quita repeticiones que mete el reconocedor: "hello hello hello" → "hello". */
+export function cleanRepeats(text) {
+  return text
+    .replace(/\b(\w+(?:\s+\w+)+?)(?:\s+\1\b)+/gi, '$1')
+    .replace(/\b(\w+(?:'\w+)?)(?:\s+\1\b)+/gi, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 /**
- * Escucha una frase. Devuelve { text, confidence, alternatives }.
- * `onInterim` recibe el texto parcial mientras hablas.
+ * Escucha hasta que llames a `listen.stop()` (tocar de nuevo el micrófono).
+ * Las pausas no cortan la grabación: si el reconocedor se detiene por un
+ * silencio, se reinicia solo y sigue sumando lo que dices.
+ * Devuelve { text, confidence, alternatives }. `onInterim` recibe el texto parcial.
  */
-export function listen({ lang, onInterim } = {}) {
+export function listen({ lang, onInterim, maxMs = 180000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!Recognition) {
       reject(new Error('Este navegador no soporta reconocimiento de voz. Usa Chrome en Android.'));
       return;
     }
-    const rec = new Recognition();
-    rec.lang = lang || settings.recogLang || 'en-AU';
-    rec.interimResults = true;
-    rec.maxAlternatives = 3;
-    rec.continuous = true;
-    let finalParts = [];
-    let confidences = [];
+    const segments = [];
+    const confidences = [];
     let alternatives = [];
-    let silenceTimer;
+    let stopped = false;
+    let failed = false;
+    let rec;
+
+    const joined = (extra = '') => cleanRepeats(collapse([...segments, extra]).join(' '));
 
     const finish = () => {
-      clearTimeout(silenceTimer);
+      if (stopped) return;
+      stopped = true;
+      clearTimeout(maxTimer);
       try {
-        rec.stop();
+        rec?.stop();
       } catch {}
     };
 
-    rec.onresult = (e) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) {
-          finalParts.push(r[0].transcript.trim());
-          confidences.push(r[0].confidence);
-          if (alternatives.length === 0) alternatives = Array.from(r).map((a) => a.transcript.trim());
-        } else {
-          interim += r[0].transcript;
+    const start = () => {
+      rec = new Recognition();
+      rec.lang = lang || settings.recogLang || 'en-AU';
+      rec.interimResults = true;
+      rec.maxAlternatives = 3;
+      // Sesiones cortas que se reinician: en Android es más estable que continuous = true.
+      rec.continuous = false;
+      let sessionFinal = '';
+      let current = '';
+      let sessionConf = 0;
+      let sessionAlts = [];
+
+      rec.onresult = (e) => {
+        const finals = [];
+        let interim = '';
+        for (let i = 0; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) {
+            finals.push(r[0].transcript);
+            sessionConf = r[0].confidence;
+            sessionAlts = Array.from(r).map((x) => x.transcript.trim());
+          } else {
+            interim = r[0].transcript;
+          }
         }
-      }
-      onInterim?.([...finalParts, interim].join(' ').trim());
-      clearTimeout(silenceTimer);
-      // Cierra solo tras 2,5 s de silencio para que puedas pensar entre frases.
-      silenceTimer = setTimeout(finish, 2500);
+        sessionFinal = collapse(finals).join(' ');
+        current = collapse([sessionFinal, interim]).join(' ');
+        onInterim?.(joined(current));
+      };
+      rec.onerror = (e) => {
+        if (e.error === 'no-speech' || e.error === 'aborted') return;
+        failed = true;
+        stopped = true;
+        clearTimeout(maxTimer);
+        reject(new Error(e.error === 'not-allowed' ? 'Permiso de micrófono denegado.' : `Error de micrófono: ${e.error}`));
+      };
+      rec.onend = () => {
+        if (failed) return;
+        const piece = sessionFinal || current;
+        if (piece) {
+          segments.push(piece);
+          if (sessionConf > 0) confidences.push(sessionConf);
+          if (sessionAlts.length) alternatives = sessionAlts;
+        }
+        if (!stopped) {
+          // Hiciste una pausa: seguimos escuchando.
+          try {
+            start();
+            return;
+          } catch {}
+        }
+        const text = joined();
+        resolve({
+          text,
+          confidence: confidences.length ? confidences.reduce((x, y) => x + y, 0) / confidences.length : 0,
+          alternatives: segments.length === 1 ? alternatives : [text],
+        });
+      };
+      rec.start();
     };
-    rec.onerror = (e) => {
-      if (e.error === 'no-speech' || e.error === 'aborted') return;
-      reject(new Error(e.error === 'not-allowed' ? 'Permiso de micrófono denegado.' : `Error de micrófono: ${e.error}`));
-    };
-    rec.onend = () => {
-      const text = finalParts.join(' ').trim();
-      const valid = confidences.filter((c) => c > 0);
-      resolve({
-        text,
-        confidence: valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0,
-        alternatives: finalParts.length === 1 ? alternatives : [text],
-      });
-    };
+
+    const maxTimer = setTimeout(finish, maxMs);
     listen.stop = finish;
-    rec.start();
+    start();
   });
 }
 
