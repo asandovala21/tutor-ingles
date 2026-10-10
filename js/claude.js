@@ -30,7 +30,8 @@ function trackUsage(usage) {
 }
 
 /**
- * Pide a Claude una respuesta JSON que cumpla `schema` (structured outputs).
+ * Pide a Claude una respuesta. Con `schema` devuelve `data` (JSON que cumple el
+ * esquema, vía structured outputs); sin `schema` devuelve `text` libre.
  * `history` se devuelve con el turno del asistente agregado tal cual vino
  * (incluye bloques de thinking), para mantener el historial append-only.
  */
@@ -45,7 +46,7 @@ export async function askJSON({ system, messages, schema, effort = 'low', maxTok
     system,
     messages,
     cache_control: { type: 'ephemeral' },
-    output_config: { effort, format: { type: 'json_schema', schema } },
+    output_config: { effort, ...(schema ? { format: { type: 'json_schema', schema } } : {}) },
   };
   if (m.fallback) {
     // Si un clasificador de seguridad rechaza la petición, la API la reintenta en otro modelo.
@@ -80,6 +81,7 @@ export async function askJSON({ system, messages, schema, effort = 'low', maxTok
     throw new TutorError('La respuesta quedó cortada. Intenta de nuevo.');
   }
   const text = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  if (!schema) return { text, assistantContent: resp.content, usd };
   let data;
   try {
     data = JSON.parse(text);

@@ -9,6 +9,7 @@ App para el celular (Android) para practicar inglés para las reuniones en BHP:
   - **⏹️ Terminar** te da un resumen: fortalezas, errores que se repiten y qué practicar.
 - **📘 Gramática**: 25 temas avanzados, cada uno con **máximo 5 sesiones** (explicación → práctica → traducción → hablar → evaluación), con ejercicios corregidos y ejemplos de BHP.
 - **🎙️ Pronunciación**: frases de BHP para los sonidos difíciles para hispanohablantes (th, v/b, -ed, "schedule", schwa, acento de palabra…). Escuchas el modelo, lees en voz alta y ves qué palabras no se entendieron. Modo **"Entender acentos"**: dictado con voces australianas e indias.
+- **💬 Dudas**: chat con Claude para preguntar lo que quieras (cómo decir algo, explicar gramática, preparar una reunión o un correo, qué practicar). Conoce tu perfil, tu progreso, tus errores, tus últimas reuniones simuladas y, si quieres, tus transcripciones. Las frases en inglés de la respuesta tienen 🔊 para escucharlas.
 - **📈 Progreso**: errores más frecuentes, temas vistos, sesiones hechas y **gasto estimado** en la API.
 
 **Personalizada con tus reuniones reales**: la gramática está ordenada según lo que más se usa en tus reuniones de Data & Digital (voz pasiva, present perfect, "What I'm saying is…", preguntas indirectas, modales para recomendar…), los personajes y escenarios son de integración de datos, arquitectura, modelo de soporte, gobierno y seguimiento, y hay una sección de **frases de reunión** reales (generalizadas) para escuchar y repetir. No se incluye ningún nombre, monto ni dato interno.

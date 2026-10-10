@@ -14,12 +14,28 @@ Grammar the learner does NOT handle yet (curriculum, by id; level 1 = most used 
 
 All explanations for the learner are written in Spanish (Chilean-friendly, clear, no jargon). All examples and role-play speech are in English. Context is always BHP data, technology and project meetings.`;
 
-function progressBlock() {
+function progressBlock(errorCount = 15) {
   const introduced = progress.introduced.map((id) => topicById(id)?.title || id);
-  const recent = progress.errors.slice(0, 15).map((e) => `"${e.original}" -> "${e.correction}" (${e.grammar_topic})`);
+  const recent = progress.errors.slice(0, errorCount).map((e) => `"${e.original}" -> "${e.correction}" (${e.grammar_topic})`);
   return `Learner progress so far:
 - Grammar topics already introduced to the learner during meetings: ${introduced.join(', ') || 'none yet'}.
 - Recent mistakes: ${recent.join('; ') || 'none recorded yet'}.`;
+}
+
+/** Resumen detallado del aprendizaje para el chat de dudas. */
+function learningBlock() {
+  const modules = Object.entries(progress.modules)
+    .map(([id, m]) => `${topicById(id)?.title || id}: ${m.sessions.map((s) => `S${s.n} ${s.score}%`).join(', ')}`);
+  const counts = {};
+  for (const e of progress.errors) counts[e.grammar_topic] = (counts[e.grammar_topic] || 0) + 1;
+  const weak = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([id, n]) => `${topicById(id)?.title || id} (${n})`);
+  const pron = Object.entries(progress.pron || {})
+    .map(([id, scores]) => `${id}: avg ${Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)}% over ${scores.length} tries`);
+  return `${progressBlock(40)}
+- Grammar module sessions done (score per session): ${modules.join('; ') || 'none yet'}.
+- Most frequent mistake areas (count): ${weak.join(', ') || 'none yet'}.
+- Pronunciation practice (speech-recognition match score by sound set): ${pron.join('; ') || 'none yet'}.`;
 }
 
 // ---------------- Simulación de reuniones ----------------
@@ -254,5 +270,39 @@ export function pronSystem() {
       text: `You are a pronunciation coach for a Spanish-speaking (Chilean) professional at BHP who wants to be understood clearly by Australian and Indian-Australian colleagues. You only have the speech-recognition transcript (no audio), so infer likely pronunciation problems from the differences between the target sentence and what the recognizer heard, using your knowledge of typical Spanish-speaker errors (th, v/b, short/long vowels, schwa, -ed endings, s+consonant clusters, final consonants, h, word stress). Answer in Spanish, short and practical (mouth/tongue position, a minimal pair to practise). Don't invent problems if the transcript matches.`,
       cache_control: { type: 'ephemeral' },
     },
+  ];
+}
+
+// ---------------- Chat de dudas ----------------
+
+/**
+ * Sistema del chat: perfil, transcripciones (bloque estable, en caché) y
+ * progreso + reuniones simuladas recientes (bloque variable).
+ */
+export function chatSystem({ transcripts = [], meetings = [] }) {
+  const docs = transcripts.length
+    ? `\n\n## The learner's real meeting transcripts and work documents\nUse them to understand their real context: topics, people's roles, vocabulary, how colleagues actually speak. Some participants make grammar mistakes in the transcripts: never use those as models.\n\n${transcripts
+        .map((t) => `<document name="${t.name.replace(/"/g, "'")}">\n${t.text}\n</document>`)
+        .join('\n\n')}`
+    : '';
+  const stable = `You are the learner's personal English tutor and coach, answering their questions in a chat inside their English-practice app.
+
+${LEARNER_PROFILE}
+
+## How to answer
+- Answer in Spanish by default (the learner's language), with English examples. If they write in English or ask for English, answer in English.
+- Be practical and concrete: short explanations, then examples from THEIR work (data integration, Snowflake, architecture, vendors, support models, status updates, follow-ups) and, when relevant, from their real meetings below.
+- When they ask "how do I say X", give 2-3 natural options (simple/clear first, then more native), mark which one Australian colleagues would use, and add pronunciation tips for difficult words (Spanish-speaker issues).
+- When they ask what to practise, use their progress and mistakes below to recommend specific grammar modules, scenarios or sound sets from the app.
+- When they ask to prepare a meeting or an email, write it in clear, simple, professional English that they can actually say, and explain new structures briefly.
+- Use simple Markdown: short paragraphs, "- " bullets and **bold**. No tables. Keep answers reasonably short unless they ask for more.${docs}`;
+  const recentMeetings = meetings.length
+    ? `\n\nRecent simulated meetings in the app (most recent first):\n${meetings
+        .map((m) => `- ${m.date.slice(0, 10)} · ${m.scenario} with ${m.character}:\n${m.turns.map((t) => `  ${t.who}: ${t.text}`).join('\n')}`)
+        .join('\n')}`
+    : '';
+  return [
+    { type: 'text', text: stable, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: `${learningBlock()}${recentMeetings}` },
   ];
 }

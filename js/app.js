@@ -3,7 +3,7 @@ import { CHARACTERS, SCENARIOS, GRAMMAR_TOPICS, PRON_SETS, PHRASE_GROUPS, MAX_SE
 import {
   meetingSystem, learnerTurnText, MEETING_SCHEMA,
   lessonSystem, lessonRequest, LESSON_SCHEMA, gradeRequest, GRADE_SCHEMA,
-  pronSystem, PRON_FEEDBACK_SCHEMA, PRON_SENTENCES_SCHEMA,
+  pronSystem, PRON_FEEDBACK_SCHEMA, PRON_SENTENCES_SCHEMA, chatSystem,
 } from './prompts.js';
 import {
   settings, progress, saveSettings, saveProgress, resetProgress, logErrors, markIntroduced, recordModuleSession,
@@ -149,7 +149,7 @@ function speakBtn(text, lang = 'en-AU', pitch = 1, character) {
 
 // ---------------- pestañas ----------------
 
-const tabs = { meeting: renderMeeting, grammar: renderGrammar, pron: renderPron, progress: renderProgress };
+const tabs = { meeting: renderMeeting, grammar: renderGrammar, pron: renderPron, chat: renderChat, progress: renderProgress };
 
 function go(tab) {
   stopSpeaking();
@@ -302,6 +302,10 @@ async function renderMeeting() {
     meeting.history = [];
     meeting.log = [];
     meeting.active = true;
+    // Registro breve de la reunión para que el chat de dudas la conozca (últimas 5).
+    meeting.record = { date: new Date().toISOString(), scenario: scenario.title, character: meeting.character.name, turns: [] };
+    progress.meetings = [meeting.record, ...(progress.meetings || [])].slice(0, 5);
+    saveProgress();
     renderMeetingLive();
     await meetingTurn('[START]', null);
   });
@@ -418,11 +422,20 @@ function feedbackHTML(fb) {
   return parts.join('') || '<div class="fb-overall">👍 ¡Perfecto!</div>';
 }
 
+function recordTurn(who, text) {
+  const rec = meeting.record;
+  if (!rec) return;
+  rec.turns.push({ who, text: text.slice(0, 600) });
+  rec.turns = rec.turns.slice(-40);
+  saveProgress();
+}
+
 async function meetingTurn(text, stt) {
   const isControl = text === '[START]' || text === '[END]';
   if (!isControl) {
     const entry = { kind: 'me', text };
     meeting.log.push(entry);
+    recordTurn('Learner', text);
     appendEntry(entry);
   }
   const content = isControl ? text : learnerTurnText(text, stt);
@@ -452,6 +465,7 @@ async function meetingTurn(text, stt) {
       if (fb?.new_grammar?.topic_id) markIntroduced(fb.new_grammar.topic_id);
     }
     const reply = { kind: 'them', speaker: data.speaker || meeting.character.name, text: data.reply };
+    recordTurn(reply.speaker, data.reply);
     meeting.log.push(reply);
     appendEntry(reply);
     $('#speaker') && ($('#speaker').textContent = reply.speaker);
@@ -772,6 +786,156 @@ async function moreSentences(e) {
     showError(err);
     e.target.disabled = false;
     e.target.textContent = '✨ Más frases';
+  }
+}
+
+// ================= DUDAS (chat con contexto) =================
+
+const CHAT_KEY = 'tutor.chat.v1';
+const CHAT_MAX = 40; // mensajes por conversación antes de empezar una nueva
+const chat = loadChat();
+
+function loadChat() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAT_KEY)) || { messages: [], view: [], useDocs: true };
+  } catch {
+    return { messages: [], view: [], useDocs: true };
+  }
+}
+
+function saveChat() {
+  try {
+    localStorage.setItem(CHAT_KEY, JSON.stringify(chat));
+  } catch {
+    // Si no cabe, se guarda solo lo visible.
+    try {
+      localStorage.setItem(CHAT_KEY, JSON.stringify({ messages: [], view: chat.view.slice(-20), useDocs: chat.useDocs }));
+    } catch {}
+  }
+}
+
+const CHAT_SUGGESTIONS = [
+  '¿Cómo digo "quedamos atentos a sus comentarios" en una reunión?',
+  '¿Qué debería practicar esta semana según mis errores?',
+  'Explícame present perfect vs past simple con ejemplos de mis reuniones',
+  'Prepárame frases para un status update del proyecto',
+  '¿Qué significa "circle back" y cómo lo uso?',
+  'Ayúdame a escribir un correo de seguimiento cuando no me responden',
+];
+
+async function renderChat() {
+  const transcripts = await listTranscripts();
+  const docChars = transcripts.reduce((n, t) => n + t.text.length, 0);
+  view.innerHTML = `
+    <section class="card chat-head">
+      <div>
+        <h2>Dudas</h2>
+        <small class="muted">Claude conoce tu perfil, tu progreso, tus errores, tus últimas reuniones simuladas${transcripts.length ? ' y tus transcripciones' : ''}.</small>
+      </div>
+      <button id="chat-new" class="mini-btn" title="Nueva conversación">🗑️</button>
+    </section>
+    ${transcripts.length ? `<label class="check chat-docs"><input id="chat-docs" type="checkbox" ${chat.useDocs ? 'checked' : ''}/> Incluir ${transcripts.length === 1 ? 'mi transcripción' : `mis ${transcripts.length} transcripciones`} (~${Math.max(1, Math.round(docChars / 4000))}k tokens; más contexto, cuesta un poco más)</label>` : ''}
+    <div id="chat-log" class="chat"></div>
+    <div class="composer">
+      <button id="chat-mic" class="mic" aria-label="Hablar">🎤</button>
+      <textarea id="chat-msg" rows="1" placeholder="Escribe o dicta tu duda…"></textarea>
+      <button id="chat-send" class="primary" aria-label="Enviar">➤</button>
+    </div>`;
+
+  const log = $('#chat-log');
+  if (!chat.view.length) {
+    log.innerHTML = `<div class="card"><p class="muted">Pregúntame lo que quieras sobre inglés, tus reuniones o qué practicar. Por ejemplo:</p>
+      <div class="chips">${CHAT_SUGGESTIONS.map((q) => `<button class="chip">${esc(q)}</button>`).join('')}</div></div>`;
+    log.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => sendChat(b.textContent)));
+  }
+  for (const m of chat.view) appendChat(m);
+
+  $('#chat-new').addEventListener('click', () => {
+    if (chat.view.length && !confirm('¿Empezar una conversación nueva? (se borra este chat)')) return;
+    chat.messages = [];
+    chat.view = [];
+    saveChat();
+    renderChat();
+  });
+  $('#chat-docs')?.addEventListener('change', (e) => {
+    chat.useDocs = e.target.checked;
+    saveChat();
+  });
+  const input = $('#chat-msg');
+  $('#chat-send').addEventListener('click', () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.cancelMic?.();
+    input.blur();
+    input.value = '';
+    delete input.dataset.stt;
+    autoGrow(input);
+    sendChat(text);
+  });
+  attachMic($('#chat-mic'), input);
+}
+
+function appendChat(m) {
+  const log = $('#chat-log');
+  if (!log) return null;
+  const el = document.createElement('div');
+  if (m.role === 'user') {
+    el.className = 'bubble me';
+    el.innerHTML = `<p>${esc(m.text)}</p>`;
+  } else if (m.role === 'thinking') {
+    el.className = 'bubble them thinking';
+    el.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
+  } else {
+    el.className = 'bubble them chat-answer';
+    el.innerHTML = md(m.text);
+    // 🔊 en cada frase en inglés entre comillas o en negrita, para escucharla.
+    el.querySelectorAll('strong').forEach((s) => {
+      if (/^[A-Za-z][A-Za-z0-9 ,.'’?!-]{2,}$/.test(s.textContent) && !/[áéíóúñ¿¡]/i.test(s.textContent)) {
+        const b = speakBtn(s.textContent);
+        b.classList.add('inline');
+        s.after(b);
+      }
+    });
+  }
+  log.append(el);
+  el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  return el;
+}
+
+async function sendChat(text) {
+  if (!$('#chat-log')) return;
+  if (!chat.view.length) $('#chat-log').innerHTML = '';
+  if (chat.messages.length >= CHAT_MAX) {
+    // Conversación muy larga: se empieza una nueva para mantener el costo bajo.
+    chat.messages = [];
+    toast('Conversación larga: empiezo una nueva (el contexto de tu aprendizaje se mantiene).', 5000);
+  }
+  const userMsg = { role: 'user', text };
+  chat.view.push(userMsg);
+  appendChat(userMsg);
+  const thinking = appendChat({ role: 'thinking' });
+  const messages = [...chat.messages, { role: 'user', content: text }];
+  $('#chat-send').disabled = true;
+  try {
+    const transcripts = chat.useDocs ? await listTranscripts() : [];
+    const { text: answer, assistantContent } = await askJSON({
+      system: chatSystem({ transcripts, meetings: progress.meetings || [] }),
+      messages,
+      effort: 'medium',
+    });
+    chat.messages = [...messages, { role: 'assistant', content: assistantContent }];
+    const a = { role: 'assistant', text: answer };
+    chat.view.push(a);
+    saveChat();
+    thinking?.remove();
+    appendChat(a);
+  } catch (e) {
+    thinking?.remove();
+    chat.view.pop();
+    showError(e);
+    $('#chat-msg') && ($('#chat-msg').value = text);
+  } finally {
+    $('#chat-send') && ($('#chat-send').disabled = false);
   }
 }
 
