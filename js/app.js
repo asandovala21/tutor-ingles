@@ -78,12 +78,20 @@ function attachMic(button, input, { onDone } = {}) {
     return;
   }
   let busy = false;
+  let cancelled = false;
+  // Al enviar mientras graba: corta el micrófono e ignora lo que llegue después.
+  input.cancelMic = () => {
+    if (!busy) return;
+    cancelled = true;
+    listen.stop?.();
+  };
   button.addEventListener('click', async () => {
     if (busy) {
       listen.stop?.();
       return;
     }
     busy = true;
+    cancelled = false;
     stopSpeaking();
     button.classList.add('recording');
     const label = button.textContent;
@@ -91,6 +99,7 @@ function attachMic(button, input, { onDone } = {}) {
     const base = input.value.trim();
     const prevStt = input.dataset.stt ? JSON.parse(input.dataset.stt) : null;
     const show = (t) => {
+      if (cancelled) return;
       input.value = [base, t].filter(Boolean).join(' ');
       autoGrow(input);
     };
@@ -99,6 +108,7 @@ function attachMic(button, input, { onDone } = {}) {
     toast('🎤 Escuchando. Puedes hacer pausas: toca ⏹️ cuando termines.', 4000);
     try {
       const res = await listen({ onInterim: show });
+      if (cancelled) return;
       show(res.text);
       const stt = { ...res, text: input.value };
       if (prevStt || base) {
@@ -347,9 +357,22 @@ function renderMeetingLive() {
     const text = input.value.trim();
     if (!text) return;
     const stt = input.dataset.stt ? JSON.parse(input.dataset.stt) : null;
+    input.cancelMic?.();
+    // Cierra el teclado: así Android no vuelve a escribir la palabra que estaba editando.
+    input.blur();
     input.value = '';
     delete input.dataset.stt;
     autoGrow(input);
+    // Si el teclado o el micrófono reescriben parte del texto enviado, se vuelve a limpiar.
+    for (const ms of [50, 200, 600]) {
+      setTimeout(() => {
+        const v = input.value.trim();
+        if (v && text.includes(v)) {
+          input.value = '';
+          autoGrow(input);
+        }
+      }, ms);
+    }
     meetingTurn(text, stt);
   };
   $('#send').addEventListener('click', send);
