@@ -10,7 +10,7 @@ import {
   listTranscripts, saveTranscript, deleteTranscript, exportAll, importAll,
 } from './store.js';
 import { pdfToText } from './pdf.js';
-import { cloudEnabled, monthlyUsage, monthlyLimit, testCloud } from './cloudtts.js';
+import { monthlyUsage, monthlyLimit, testCloud, freeChars } from './cloudtts.js';
 import { speak, stopSpeaking, resetCloudWarning, listen, canListen, avatarSVG, animateMouth, compareWords, englishVoices, hasVoiceFor } from './speech.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -765,7 +765,7 @@ function renderProgress() {
       <div><b>${progress.introduced.length}</b><small>temas vistos en reuniones</small></div>
       <div><b>${progress.errors.length}</b><small>errores registrados</small></div>
       <div><b>${usd(progress.usd)}</b><small>gasto estimado en Claude (${progress.calls} llamadas)</small></div>
-      <div><b>${Math.round(monthlyUsage() / 1000)}k</b><small>caracteres de voz este mes (gratis hasta ${Math.round(monthlyLimit() / 1000)}k)</small></div>
+      <div><b>${Math.round(monthlyUsage() / 1000)}k</b><small>caracteres de voz este mes (límite ${Math.round(monthlyLimit() / 1000)}k de ${Math.round(freeChars() / 1000)}k gratis)</small></div>
     </section>
     <section class="card">
       <h3>Lo que más te cuesta</h3>
@@ -824,9 +824,13 @@ function openSettings() {
   $('#rate-out').textContent = settings.rate;
   $('#set-hide').checked = settings.hideReplyText;
   $('#set-gkey').value = settings.googleKey || '';
+  $('#set-akey').value = settings.azureKey || '';
+  $('#set-aregion').value = settings.azureRegion || '';
+  $('#set-provider').value = settings.ttsProvider || 'azure';
+  showProvider();
   $('#set-cloud').checked = settings.cloudVoices !== false;
   $('#set-ttslimit').value = monthlyLimit();
-  $('#tts-usage').textContent = `Usado este mes: ${monthlyUsage().toLocaleString('es-CL')} caracteres. Google regala 1.000.000 al mes en voces Chirp 3 HD.`;
+  $('#tts-usage').textContent = `Usado este mes: ${monthlyUsage().toLocaleString('es-CL')} caracteres. Gratis al mes: Azure 500.000 · Google 1.000.000.`;
   $('#test-cloud-out').textContent = '';
   $('#set-voice-au').innerHTML = voiceOptions('en-AU');
   $('#set-voice-in').innerHTML = voiceOptions('en-IN');
@@ -844,8 +848,14 @@ $('#set-save').addEventListener('click', () => {
   settings.hideReplyText = $('#set-hide').checked;
   settings.voiceOverrides = { 'en-AU': $('#set-voice-au').value, 'en-IN': $('#set-voice-in').value };
   settings.googleKey = $('#set-gkey').value.trim();
+  settings.azureKey = $('#set-akey').value.trim();
+  settings.azureRegion = $('#set-aregion').value.trim();
+  const prevProvider = settings.ttsProvider;
+  settings.ttsProvider = $('#set-provider').value;
   settings.cloudVoices = $('#set-cloud').checked;
-  settings.ttsLimit = Number($('#set-ttslimit').value) || 900000;
+  settings.ttsLimit = Number($('#set-ttslimit').value) || 0;
+  // Al cambiar de proveedor, el límite vuelve al 90% de lo gratis de ese proveedor.
+  if (prevProvider !== settings.ttsProvider) settings.ttsLimit = 0;
   resetCloudWarning();
   saveSettings();
   toast('Ajustes guardados');
@@ -859,8 +869,11 @@ if ('serviceWorker' in navigator) {
 
 $('#test-cloud').addEventListener('click', async () => {
   const out = $('#test-cloud-out');
-  const prev = { googleKey: settings.googleKey, cloudVoices: settings.cloudVoices };
+  const prev = { googleKey: settings.googleKey, azureKey: settings.azureKey, azureRegion: settings.azureRegion, ttsProvider: settings.ttsProvider, cloudVoices: settings.cloudVoices };
   settings.googleKey = $('#set-gkey').value.trim();
+  settings.azureKey = $('#set-akey').value.trim();
+  settings.azureRegion = $('#set-aregion').value.trim();
+  settings.ttsProvider = $('#set-provider').value;
   settings.cloudVoices = true;
   out.textContent = 'Probando…';
   try {
@@ -875,6 +888,13 @@ $('#test-cloud').addEventListener('click', async () => {
     Object.assign(settings, prev);
   }
 });
+
+function showProvider() {
+  const azure = $('#set-provider').value === 'azure';
+  $('#prov-azure').hidden = !azure;
+  $('#prov-google').hidden = azure;
+}
+$('#set-provider').addEventListener('change', showProvider);
 
 window.addEventListener('tts-warning', (e) => toast(e.detail, 6000));
 

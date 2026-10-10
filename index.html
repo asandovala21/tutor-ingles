@@ -53,10 +53,26 @@
       </label>
       <label class="check"><input id="set-hide" type="checkbox" /> Modo escucha: ocultar el texto del personaje (toca para verlo)</label>
       <fieldset>
-        <legend>Voces naturales (Google Cloud)</legend>
-        <label>API key de Google Cloud
-          <input id="set-gkey" type="password" autocomplete="off" placeholder="AIza..." />
+        <legend>Voces naturales</legend>
+        <label>Proveedor
+          <select id="set-provider">
+            <option value="azure">Microsoft Azure (más simple de configurar)</option>
+            <option value="google">Google Cloud</option>
+          </select>
         </label>
+        <div id="prov-azure">
+          <label>Clave de Azure Speech (KEY 1)
+            <input id="set-akey" type="password" autocomplete="off" placeholder="Clave de 32 o más caracteres" />
+          </label>
+          <label>Región de Azure
+            <input id="set-aregion" type="text" autocomplete="off" placeholder="p. ej. eastus, brazilsouth, australiaeast" />
+          </label>
+        </div>
+        <div id="prov-google">
+          <label>API key de Google Cloud
+            <input id="set-gkey" type="password" autocomplete="off" placeholder="AIza..." />
+          </label>
+        </div>
         <label class="check"><input id="set-cloud" type="checkbox" /> Usar voces naturales</label>
         <label>Límite mensual de caracteres
           <input id="set-ttslimit" type="number" min="0" step="50000" />

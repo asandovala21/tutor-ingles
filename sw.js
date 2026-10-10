@@ -1,6 +1,6 @@
 // Service worker: guarda la app para que abra rápido y funcione la parte offline
 // (la conversación con Claude siempre necesita internet).
-const CACHE = 'tutor-ingles-v7';
+const CACHE = 'tutor-ingles-v8';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/claude.js', 'js/curriculum.js', 'js/prompts.js', 'js/speech.js', 'js/store.js', 'js/pdf.js', 'js/cloudtts.js',
