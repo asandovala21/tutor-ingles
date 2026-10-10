@@ -121,7 +121,8 @@ export function learnerTurnText(text, stt) {
   if (!stt) return `${text}\n\n(typed, not spoken)`;
   const alts = stt.alternatives?.length > 1 ? ` Other hypotheses: ${stt.alternatives.slice(1).map((a) => `"${a}"`).join(', ')}.` : '';
   const conf = typeof stt.confidence === 'number' && stt.confidence > 0 ? ` Recognizer confidence: ${stt.confidence.toFixed(2)}.` : '';
-  return `${text}\n\n(spoken; speech-recognition transcript.${conf}${alts})`;
+  const edited = stt.edited ? ' The learner then edited the text by hand.' : '';
+  return `${text}\n\n(spoken; speech-recognition transcript. Punctuation was added automatically from pauses: "..." marks a pause or hesitation in the middle of a sentence. Do not correct punctuation or capitalisation.${conf}${alts}${edited})`;
 }
 
 // ---------------- Módulos de gramática ----------------

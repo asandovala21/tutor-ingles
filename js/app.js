@@ -59,7 +59,17 @@ function usd(n) {
   return n < 0.01 ? `${(n * 100).toFixed(2)}¢` : `US$${n.toFixed(2)}`;
 }
 
-/** Botón de micrófono que escribe en un input. */
+/** Ajusta la altura de un textarea a su contenido. */
+function autoGrow(el) {
+  if (el.tagName !== 'TEXTAREA') return;
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+}
+
+/**
+ * Botón de micrófono que escribe en un input. El texto queda en la caja para
+ * revisarlo o corregirlo; no se envía solo. Si ya había texto, lo nuevo se agrega al final.
+ */
 function attachMic(button, input, { onDone } = {}) {
   if (!canListen) {
     button.disabled = true;
@@ -77,15 +87,27 @@ function attachMic(button, input, { onDone } = {}) {
     button.classList.add('recording');
     const label = button.textContent;
     const placeholder = input.placeholder;
+    const base = input.value.trim();
+    const prevStt = input.dataset.stt ? JSON.parse(input.dataset.stt) : null;
+    const show = (t) => {
+      input.value = [base, t].filter(Boolean).join(' ');
+      autoGrow(input);
+    };
     button.textContent = '⏹️';
     input.placeholder = 'Escuchando… habla con calma. Toca ⏹️ cuando termines.';
-    input.value = '';
     toast('🎤 Escuchando. Puedes hacer pausas: toca ⏹️ cuando termines.', 4000);
     try {
-      const res = await listen({ onInterim: (t) => (input.value = t) });
-      input.value = res.text;
-      input.dataset.stt = JSON.stringify(res);
-      onDone?.(res);
+      const res = await listen({ onInterim: show });
+      show(res.text);
+      const stt = { ...res, text: input.value };
+      if (prevStt || base) {
+        stt.alternatives = [input.value];
+        if (prevStt?.confidence && res.confidence) stt.confidence = (prevStt.confidence + res.confidence) / 2;
+        if (base && !prevStt) stt.edited = true;
+      }
+      input.dataset.stt = JSON.stringify(stt);
+      if (res.text) toast('Revisa el texto, corrígelo si quieres y toca ➤ para enviar. 🎤 agrega más.', 4000);
+      onDone?.(stt);
     } catch (e) {
       showError(e);
     } finally {
@@ -95,7 +117,14 @@ function attachMic(button, input, { onDone } = {}) {
       input.placeholder = placeholder;
     }
   });
-  input.addEventListener('input', () => delete input.dataset.stt);
+  input.addEventListener('input', () => {
+    autoGrow(input);
+    if (input.dataset.stt) {
+      const stt = JSON.parse(input.dataset.stt);
+      stt.edited = true;
+      input.dataset.stt = JSON.stringify(stt);
+    }
+  });
 }
 
 function speakBtn(text, lang = 'en-AU', pitch = 1) {
@@ -286,7 +315,7 @@ function renderMeetingLive() {
     <div id="chat" class="chat"></div>
     <div class="composer">
       <button id="mic" class="mic" aria-label="Hablar">🎤</button>
-      <textarea id="msg" rows="1" placeholder="Toca 🎤, habla y toca ⏹️ al terminar (o escribe)"></textarea>
+      <textarea id="msg" rows="1" placeholder="Toca 🎤 para hablar o escribe aquí"></textarea>
       <button id="send" class="primary" aria-label="Enviar">➤</button>
     </div>`;
 
@@ -319,10 +348,11 @@ function renderMeetingLive() {
     const stt = input.dataset.stt ? JSON.parse(input.dataset.stt) : null;
     input.value = '';
     delete input.dataset.stt;
+    autoGrow(input);
     meetingTurn(text, stt);
   };
   $('#send').addEventListener('click', send);
-  attachMic($('#mic'), input, { onDone: (res) => res.text && send() });
+  attachMic($('#mic'), input);
 }
 
 function appendEntry(entry) {

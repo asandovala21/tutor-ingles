@@ -226,7 +226,7 @@ menu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; margin: 1
 @keyframes spin { to { transform: rotate(360deg); } }
 
 #toast {
-  position: fixed; left: 16px; right: 16px; bottom: calc(130px + env(safe-area-inset-bottom));
+  position: fixed; left: 16px; right: 16px; top: calc(env(safe-area-inset-top) + 64px);
   background: #222; color: #fff; padding: 12px 14px; border-radius: 12px;
   opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 10; text-align: center;
 }

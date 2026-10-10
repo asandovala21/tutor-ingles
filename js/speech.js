@@ -100,6 +100,60 @@ export function cleanRepeats(text) {
     .trim();
 }
 
+// ---------------- Puntuación automática del transcript ----------------
+// El reconocedor de Android no pone puntuación. Cada pausa corta un segmento;
+// con eso aplicamos reglas básicas de transcripción:
+//   - pausa a mitad de frase → "..."
+//   - pregunta → "?"
+//   - frase completa → "."
+//   - mayúscula al inicio de cada oración y "I" siempre en mayúscula.
+
+const AUX = 'is|are|am|was|were|do|does|did|can|could|would|should|shall|will|have|has|had|may|might|must|isn\'t|aren\'t|wasn\'t|weren\'t|don\'t|doesn\'t|didn\'t|can\'t|couldn\'t|wouldn\'t|shouldn\'t|won\'t|haven\'t|hasn\'t';
+const WH = 'what|why|how|when|where|who|whom|whose|which';
+const SUBJECT = 'i|we|you|they|he|she|it|i\'m|we\'re|you\'re|they\'re|he\'s|she\'s|it\'s|i\'ve|we\'ve|i\'d|we\'d|i\'ll|we\'ll';
+const AUX_START = new RegExp(`^(${AUX})\\b`, 'i');
+const WH_START = new RegExp(`^(${WH})\\b(\\s+(\\S+))?`, 'i');
+const SUBJECT_WORD = new RegExp(`^(${SUBJECT})$`, 'i');
+const TAG_END = /\b(right|isn't it|aren't they|don't you|doesn't it|didn't you|is it|are you|correct|or not|yeah)$/i;
+const NOT_QUESTION = /^(have a|do one thing|will do|could be|must be|may be|might be)\b/i;
+const INCOMPLETE_END = /\b(and|but|or|so|because|the|a|an|to|of|for|with|in|on|at|from|by|that|which|who|if|when|then|like|um|uh|eh|is|are|was|were|be|my|our|your|their|this|these|those|i|we|they|it's|i'm|we're|going|want|need|think|about|also|than|as|into|about|um|er)$/i;
+const CONTINUATION_START = /^(and|but|or|so|because|which|that|then|also|to|with|for|than|as|if)\b/i;
+
+function isQuestion(seg) {
+  if (NOT_QUESTION.test(seg)) return false;
+  if (TAG_END.test(seg)) return true;
+  if (AUX_START.test(seg)) return true;
+  const m = seg.match(WH_START);
+  // "What I'm saying is…" o "When we finish…" no son preguntas.
+  if (m) return !(m[3] && SUBJECT_WORD.test(m[3]));
+  return /^how about\b/i.test(seg);
+}
+
+function capitalize(t) {
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** Une los segmentos (separados por pausas) con puntuación de transcript. */
+export function formatTranscript(segments) {
+  const segs = segments.map((x) => cleanRepeats(x).replace(/\bi\b/g, 'I')).filter(Boolean);
+  let out = '';
+  let newSentence = true;
+  segs.forEach((seg, i) => {
+    let s = seg.trim();
+    const next = segs[i + 1];
+    if (newSentence) s = capitalize(s);
+    if (!/[.?!…,;:]$/.test(s)) {
+      const incomplete = INCOMPLETE_END.test(s) || (next && CONTINUATION_START.test(next));
+      // La pregunta se detecta sobre la oración completa, no solo el último tramo.
+      const sentenceStart = newSentence ? s : (out.split(/[.?!]\s+/).pop() + ' ' + s).replace(/\.\.\./g, ' ');
+      s += incomplete ? '...' : isQuestion(sentenceStart.trim()) ? '?' : '.';
+    }
+    newSentence = /[.?!]$/.test(s) && !s.endsWith('...');
+    out += (out ? ' ' : '') + s;
+  });
+  return out;
+}
+
 /**
  * Escucha hasta que llames a `listen.stop()` (tocar de nuevo el micrófono).
  * Las pausas no cortan la grabación: si el reconocedor se detiene por un
@@ -119,7 +173,11 @@ export function listen({ lang, onInterim, maxMs = 180000 } = {}) {
     let failed = false;
     let rec;
 
-    const joined = (extra = '') => cleanRepeats(collapse([...segments, extra]).join(' '));
+    const joined = (extra = '') => {
+      const done = formatTranscript(collapse(segments));
+      const live = cleanRepeats(extra);
+      return [done, live].filter(Boolean).join(' ');
+    };
 
     const finish = () => {
       if (stopped) return;
