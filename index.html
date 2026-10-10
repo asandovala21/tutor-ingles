@@ -53,7 +53,20 @@
       </label>
       <label class="check"><input id="set-hide" type="checkbox" /> Modo escucha: ocultar el texto del personaje (toca para verlo)</label>
       <fieldset>
-        <legend>Voces</legend>
+        <legend>Voces naturales (Google Cloud)</legend>
+        <label>API key de Google Cloud
+          <input id="set-gkey" type="password" autocomplete="off" placeholder="AIza..." />
+        </label>
+        <label class="check"><input id="set-cloud" type="checkbox" /> Usar voces naturales</label>
+        <label>Límite mensual de caracteres
+          <input id="set-ttslimit" type="number" min="0" step="50000" />
+          <small id="tts-usage"></small>
+        </label>
+        <button type="button" id="test-cloud" class="secondary">🔊 Probar voces naturales</button>
+        <small id="test-cloud-out"></small>
+      </fieldset>
+      <fieldset>
+        <legend>Voces del celular (respaldo)</legend>
         <label>Australiana <select id="set-voice-au"></select></label>
         <label>India <select id="set-voice-in"></select></label>
         <small>Si no aparecen voces de Australia o India: Ajustes de Android → Accesibilidad / Idioma → Salida de texto a voz → Google → Instalar datos de voz → English (Australia) e English (India).</small>

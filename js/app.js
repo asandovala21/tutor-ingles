@@ -10,7 +10,8 @@ import {
   listTranscripts, saveTranscript, deleteTranscript, exportAll, importAll,
 } from './store.js';
 import { pdfToText } from './pdf.js';
-import { speak, stopSpeaking, listen, canListen, avatarSVG, animateMouth, compareWords, englishVoices, hasVoiceFor } from './speech.js';
+import { cloudEnabled, monthlyUsage, monthlyLimit, testCloud } from './cloudtts.js';
+import { speak, stopSpeaking, resetCloudWarning, listen, canListen, avatarSVG, animateMouth, compareWords, englishVoices, hasVoiceFor } from './speech.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -127,12 +128,12 @@ function attachMic(button, input, { onDone } = {}) {
   });
 }
 
-function speakBtn(text, lang = 'en-AU', pitch = 1) {
+function speakBtn(text, lang = 'en-AU', pitch = 1, character) {
   const b = document.createElement('button');
   b.className = 'mini-btn';
   b.textContent = '🔊';
   b.setAttribute('aria-label', 'Escuchar');
-  b.addEventListener('click', () => speak(text, { lang, pitch }));
+  b.addEventListener('click', () => speak(text, { lang, pitch, character }));
   return b;
 }
 
@@ -322,12 +323,12 @@ function renderMeetingLive() {
   for (const entry of meeting.log) appendEntry(entry);
 
   const mouth = animateMouth($('#avatar'));
-  meeting.say = (text) =>
-    speak(text, { lang: c.lang, pitch: c.pitch, onStart: mouth.start, onEnd: mouth.stop, onWord: mouth.word });
+  const voice = { lang: c.lang, pitch: c.pitch, character: c.id, onStart: mouth.start, onEnd: mouth.stop, onWord: mouth.word, onLevel: mouth.level };
+  meeting.say = (text) => speak(text, voice);
 
   $('#replay').addEventListener('click', () => meeting.lastReply && meeting.say(meeting.lastReply));
   $('#slow').addEventListener('click', () =>
-    meeting.lastReply && speak(meeting.lastReply, { lang: c.lang, pitch: c.pitch, rate: 0.7, onStart: mouth.start, onEnd: mouth.stop, onWord: mouth.word }),
+    meeting.lastReply && speak(meeting.lastReply, { ...voice, rate: 0.7 }),
   );
   $('#end').addEventListener('click', async () => {
     if (!confirm('¿Terminar la reunión y ver el resumen?')) return;
@@ -366,7 +367,7 @@ function appendEntry(entry) {
     el.className = `bubble them ${settings.hideReplyText ? 'hidden-text' : ''}`;
     el.innerHTML = `<small>${esc(entry.speaker)}</small><p>${esc(entry.text)}</p>`;
     el.addEventListener('click', () => el.classList.remove('hidden-text'));
-    el.append(speakBtn(entry.text, meeting.character.lang, meeting.character.pitch));
+    el.append(speakBtn(entry.text, meeting.character.lang, meeting.character.pitch, meeting.character.id));
   } else if (entry.kind === 'feedback') {
     el.className = 'feedback';
     el.innerHTML = feedbackHTML(entry.fb);
@@ -763,7 +764,8 @@ function renderProgress() {
       <div><b>${modulesDone}</b><small>sesiones de gramática</small></div>
       <div><b>${progress.introduced.length}</b><small>temas vistos en reuniones</small></div>
       <div><b>${progress.errors.length}</b><small>errores registrados</small></div>
-      <div><b>${usd(progress.usd)}</b><small>gasto estimado (${progress.calls} llamadas)</small></div>
+      <div><b>${usd(progress.usd)}</b><small>gasto estimado en Claude (${progress.calls} llamadas)</small></div>
+      <div><b>${Math.round(monthlyUsage() / 1000)}k</b><small>caracteres de voz este mes (gratis hasta ${Math.round(monthlyLimit() / 1000)}k)</small></div>
     </section>
     <section class="card">
       <h3>Lo que más te cuesta</h3>
@@ -821,6 +823,11 @@ function openSettings() {
   $('#set-rate').value = settings.rate;
   $('#rate-out').textContent = settings.rate;
   $('#set-hide').checked = settings.hideReplyText;
+  $('#set-gkey').value = settings.googleKey || '';
+  $('#set-cloud').checked = settings.cloudVoices !== false;
+  $('#set-ttslimit').value = monthlyLimit();
+  $('#tts-usage').textContent = `Usado este mes: ${monthlyUsage().toLocaleString('es-CL')} caracteres. Google regala 1.000.000 al mes en voces Chirp 3 HD.`;
+  $('#test-cloud-out').textContent = '';
   $('#set-voice-au').innerHTML = voiceOptions('en-AU');
   $('#set-voice-in').innerHTML = voiceOptions('en-IN');
   $('#settings-dialog').showModal();
@@ -836,6 +843,10 @@ $('#set-save').addEventListener('click', () => {
   settings.rate = Number($('#set-rate').value);
   settings.hideReplyText = $('#set-hide').checked;
   settings.voiceOverrides = { 'en-AU': $('#set-voice-au').value, 'en-IN': $('#set-voice-in').value };
+  settings.googleKey = $('#set-gkey').value.trim();
+  settings.cloudVoices = $('#set-cloud').checked;
+  settings.ttsLimit = Number($('#set-ttslimit').value) || 900000;
+  resetCloudWarning();
   saveSettings();
   toast('Ajustes guardados');
 });
@@ -845,6 +856,27 @@ $('#set-save').addEventListener('click', () => {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+$('#test-cloud').addEventListener('click', async () => {
+  const out = $('#test-cloud-out');
+  const prev = { googleKey: settings.googleKey, cloudVoices: settings.cloudVoices };
+  settings.googleKey = $('#set-gkey').value.trim();
+  settings.cloudVoices = true;
+  out.textContent = 'Probando…';
+  try {
+    const voices = await testCloud();
+    out.textContent = `✅ Funciona. Voces: ${Object.entries(voices).map(([id, v]) => `${characterById(id).name}: ${v}`).join(' · ')}`;
+    resetCloudWarning();
+    await speak("G'day! This is Mick. No worries, the voices are working now.", { character: 'mick', lang: 'en-AU' });
+    await speak('Hello, this is Ananya. Okay? Shall we get started?', { character: 'priya', lang: 'en-IN' });
+  } catch (e) {
+    out.textContent = `❌ ${e.message}`;
+  } finally {
+    Object.assign(settings, prev);
+  }
+});
+
+window.addEventListener('tts-warning', (e) => toast(e.detail, 6000));
 
 go('meeting');
 if (!settings.apiKey) {

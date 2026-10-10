@@ -91,7 +91,7 @@ button { cursor: pointer; border-radius: 10px; }
 
 label { display: block; margin: 10px 0 4px; font-weight: 500; }
 label.check { display: flex; gap: 8px; align-items: center; font-weight: 400; }
-select, input[type=text], input[type=password], textarea {
+select, input[type=text], input[type=password], input[type=number], textarea {
   width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 10px;
   background: var(--bg); margin-top: 4px;
 }

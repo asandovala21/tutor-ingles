@@ -1,5 +1,6 @@
 // Voz: síntesis (el monito habla con acento australiano o indio) y reconocimiento (te escucha).
 import { settings } from './store.js';
+import { cloudAudio, cloudEnabled } from './cloudtts.js';
 
 const synth = window.speechSynthesis;
 let voices = [];
@@ -33,8 +34,8 @@ export function hasVoiceFor(lang) {
   return !!pickVoice(lang);
 }
 
-/** Habla `text`. `onWord` se llama en cada palabra (si el motor lo soporta). */
-export function speak(text, { lang = 'en-AU', pitch = 1, rate, onStart, onEnd, onWord } = {}) {
+/** Voz del celular (Web Speech API). */
+function deviceSpeak(text, { lang = 'en-AU', pitch = 1, rate, onStart, onEnd, onWord } = {}) {
   return new Promise((resolve) => {
     if (!synth) {
       onEnd?.();
@@ -62,8 +63,116 @@ export function speak(text, { lang = 'en-AU', pitch = 1, rate, onStart, onEnd, o
   });
 }
 
+// ---- Voces naturales (Google Cloud) con la boca sincronizada al volumen ----
+const audioEl = new Audio();
+let audioCtx;
+let analyser;
+let playToken = 0;
+let warned = false;
+
+// El audio pasa por el analizador solo si el AudioContext puede correr;
+// si el navegador lo bloquea, el audio suena directo y la boca se mueve al azar.
+async function setupAnalyser() {
+  if (analyser || audioCtx || !window.AudioContext) return;
+  try {
+    audioCtx = new AudioContext();
+    await audioCtx.resume();
+    if (audioCtx.state !== 'running') {
+      audioCtx.close();
+      audioCtx = null;
+      return;
+    }
+    const src = audioCtx.createMediaElementSource(audioEl);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  } catch {
+    analyser = null;
+  }
+}
+
+function cloudSpeak(text, { character, lang, rate, onStart, onEnd, onLevel }) {
+  const token = ++playToken;
+  return cloudAudio(text, { character, lang, rate: rate ?? settings.rate ?? 1 }).then(
+    (blob) =>
+      new Promise(async (resolve, reject) => {
+        if (token !== playToken) return resolve();
+        await setupAnalyser();
+        await audioCtx?.resume?.();
+        if (token !== playToken) return resolve();
+        const url = URL.createObjectURL(blob);
+        audioEl.src = url;
+        let raf;
+        const buf = analyser ? new Uint8Array(analyser.fftSize) : null;
+        const tick = () => {
+          if (analyser && onLevel) {
+            analyser.getByteTimeDomainData(buf);
+            let sum = 0;
+            for (const v of buf) sum += ((v - 128) / 128) ** 2;
+            onLevel(Math.min(1, Math.sqrt(sum / buf.length) * 4));
+          }
+          raf = requestAnimationFrame(tick);
+        };
+        let started = false;
+        const done = (err) => {
+          cancelAnimationFrame(raf);
+          URL.revokeObjectURL(url);
+          audioEl.onended = audioEl.onerror = audioEl.onpause = null;
+          // Si el audio no pudo reproducirse, se avisa para usar la voz del celular.
+          if (err && !started) return reject(new Error('no se pudo reproducir el audio'));
+          onEnd?.();
+          resolve();
+        };
+        audioEl.onended = () => done();
+        audioEl.onerror = () => done(true);
+        audioEl.onpause = () => done();
+        audioEl
+          .play()
+          .then(() => {
+            started = true;
+            onStart?.();
+            tick();
+          })
+          .catch(() => done(true));
+      }),
+  );
+}
+
+/**
+ * Habla `text`. Usa voces naturales de Google Cloud si hay clave; si falla,
+ * no hay internet o se llegó al límite del mes, usa la voz del celular.
+ * `character` elige la voz del personaje; `onLevel` recibe el volumen (0-1)
+ * para mover la boca; `onWord` se llama por palabra con la voz del celular.
+ */
+export async function speak(text, opts = {}) {
+  stopSpeaking();
+  if (cloudEnabled()) {
+    try {
+      await cloudSpeak(text, opts);
+      return;
+    } catch (e) {
+      if (!warned) {
+        warned = true;
+        const msg = e.message === 'LIMIT'
+          ? 'Llegaste al límite mensual de voces naturales: uso la voz del celular.'
+          : `Voces naturales no disponibles (${e.message}). Uso la voz del celular.`;
+        window.dispatchEvent(new CustomEvent('tts-warning', { detail: msg }));
+      }
+    }
+  }
+  return deviceSpeak(text, opts);
+}
+
 export function stopSpeaking() {
+  playToken++;
   synth?.cancel();
+  if (!audioEl.paused) audioEl.pause();
+}
+
+/** Permite volver a avisar si las voces naturales fallan (p. ej., tras cambiar la clave). */
+export function resetCloudWarning() {
+  warned = false;
 }
 
 // ---------------- Reconocimiento de voz ----------------
@@ -303,6 +412,10 @@ export function animateMouth(container) {
       timer = setInterval(() => {
         if (Date.now() - lastWord > 250) set(Math.random() * 0.9 + (Math.random() < 0.25 ? 0 : 0.1));
       }, 110);
+    },
+    level(v) {
+      lastWord = Date.now();
+      set(v < 0.06 ? 0 : Math.min(1, 0.15 + v));
     },
     word() {
       lastWord = Date.now();

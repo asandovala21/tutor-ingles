@@ -27,6 +27,10 @@ Lo que ya manejas (presente simple/continuo, will, going to, pasado simple, was/
 4. **Voces**: si en los personajes aparece "⚠️ sin voz instalada", ve a *Ajustes de Android → Sistema → Idioma → Salida de texto a voz → Google → ⚙️ → Instalar datos de voz* y descarga **English (Australia)** y **English (India)**. En ⚙️ Ajustes de la app puedes elegir la voz exacta.
 5. Da permiso de **micrófono** cuando Chrome lo pida.
 
+## Voces naturales (Google Cloud)
+
+Opcional pero recomendado: con una API key de Google Cloud Text-to-Speech cada personaje habla con una voz natural (Chirp 3 HD) con acento australiano o indio, y la boca del monito se mueve con el volumen real del audio. El audio de cada frase se guarda en el teléfono, así repetirla no gasta caracteres. La app cuenta los caracteres del mes y, al llegar al límite que pongas en ⚙️ Ajustes (900.000 por defecto, bajo el millón gratis de Google), vuelve sola a las voces del celular.
+
 ## Costos
 
 En ⚙️ Ajustes eliges el modelo:
