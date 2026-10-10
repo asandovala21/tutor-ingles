@@ -56,10 +56,11 @@ export const MEETING_SCHEMA = {
     feedback: {
       type: 'object',
       additionalProperties: false,
-      required: ['overall_es', 'corrected', 'better_native', 'better_native_pron', 'errors', 'new_grammar', 'pronunciation'],
+      required: ['overall_es', 'corrected', 'corrected_pron', 'better_native', 'better_native_pron', 'errors', 'new_grammar', 'pronunciation'],
       properties: {
         overall_es: { type: 'string' },
         corrected: { type: 'string' },
+        corrected_pron: { type: 'string', description: 'Approximate pronunciation of corrected ("" if empty).' },
         better_native: { type: 'string' },
         better_native_pron: { type: 'string', description: 'Approximate pronunciation of better_native for a Spanish reader ("" if better_native is empty).' },
         errors: {
@@ -84,7 +85,15 @@ export const MEETING_SCHEMA = {
             topic_id: { type: 'string' },
             title: { type: 'string' },
             explanation_es: { type: 'string' },
-            examples: { type: 'array', items: { type: 'string' } },
+            examples: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['en', 'es', 'pron'],
+                properties: { en: { type: 'string' }, es: { type: 'string' }, pron: { type: 'string' } },
+              },
+            },
           },
         },
         pronunciation: {
@@ -92,8 +101,8 @@ export const MEETING_SCHEMA = {
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['word', 'tip_es'],
-            properties: { word: { type: 'string' }, tip_es: { type: 'string' } },
+            required: ['word', 'word_pron', 'tip_es'],
+            properties: { word: { type: 'string' }, word_pron: { type: 'string' }, tip_es: { type: 'string' } },
           },
         },
       },
@@ -122,7 +131,7 @@ ${transcript}
     : `Scenario: ${scenario.title} — ${scenario.desc}`}
 
 ## Translation and pronunciation
-reply_es: a natural Spanish translation of your reply. reply_pron and feedback.better_native_pron: ${PRON_GUIDE}
+reply_es: a natural Spanish translation of your reply. reply_pron, corrected_pron, better_native_pron, new_grammar example "pron" and pronunciation "word_pron": ${PRON_GUIDE} New grammar examples also need "es" (Spanish translation).
 
 ## Feedback rules (the "feedback" object, after each learner turn)
 - overall_es: 1-2 short sentences in Spanish: what was good and the main thing to improve. Encouraging but honest.
@@ -270,11 +279,13 @@ export const GRADE_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'correct', 'correct_answer', 'explanation_es'],
+        required: ['id', 'correct', 'correct_answer', 'correct_answer_es', 'correct_answer_pron', 'explanation_es'],
         properties: {
           id: { type: 'string' },
           correct: { type: 'boolean' },
-          correct_answer: { type: 'string' },
+          correct_answer: { type: 'string', description: 'The full correct sentence in English.' },
+          correct_answer_es: { type: 'string', description: 'Spanish translation of the correct sentence.' },
+          correct_answer_pron: { type: 'string', description: PRON_GUIDE },
           explanation_es: { type: 'string' },
         },
       },

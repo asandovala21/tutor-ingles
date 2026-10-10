@@ -486,14 +486,17 @@ function appendEntry(entry) {
 function feedbackHTML(fb) {
   const parts = [];
   if (fb.overall_es) parts.push(`<div class="fb-overall">${md(fb.overall_es)}</div>`);
-  if (fb.corrected) parts.push(`<div class="fb-row"><b>✅ Corregido:</b> ${esc(fb.corrected)} <button class="mini-btn" data-say="${esc(fb.corrected)}">🔊</button></div>`);
+  if (fb.corrected) parts.push(`<div class="fb-row"><b>✅ Corregido:</b> ${esc(fb.corrected)} <button class="mini-btn" data-say="${esc(fb.corrected)}">🔊</button>${fb.corrected_pron ? `<br><small class="pron">🗣️ ${esc(fb.corrected_pron)}</small>` : ''}</div>`);
   if (fb.better_native) parts.push(`<div class="fb-row"><b>💬 Más natural:</b> ${esc(fb.better_native)} <button class="mini-btn" data-say="${esc(fb.better_native)}">🔊</button>${fb.better_native_pron ? `<br><small class="pron">🗣️ ${esc(fb.better_native_pron)}</small>` : ''}</div>`);
   if (fb.errors?.length)
     parts.push(`<ul class="fb-errors">${fb.errors.map((e) => `<li><s>${esc(e.original)}</s> → <b>${esc(e.correction)}</b><br><small>${esc(e.explanation_es)}</small></li>`).join('')}</ul>`);
   if (fb.new_grammar?.topic_id)
-    parts.push(`<div class="fb-new"><b>🆕 Gramática nueva: ${esc(fb.new_grammar.title)}</b>${md(fb.new_grammar.explanation_es)}<ul>${fb.new_grammar.examples.map((x) => `<li>${esc(x)} <button class="mini-btn" data-say="${esc(x)}">🔊</button></li>`).join('')}</ul></div>`);
+    parts.push(`<div class="fb-new"><b>🆕 Gramática nueva: ${esc(fb.new_grammar.title)}</b>${md(fb.new_grammar.explanation_es)}<ul>${fb.new_grammar.examples.map((x) => {
+      const ex = typeof x === 'string' ? { en: x } : x;
+      return `<li>${esc(ex.en)} <button class="mini-btn" data-say="${esc(ex.en)}">🔊</button>${ex.es ? `<br><small class="muted">🇪🇸 ${esc(ex.es)}</small>` : ''}${ex.pron ? `<br><small class="pron">🗣️ ${esc(ex.pron)}</small>` : ''}</li>`;
+    }).join('')}</ul></div>`);
   if (fb.pronunciation?.length)
-    parts.push(`<div class="fb-pron"><b>🎙️ Pronunciación</b><ul>${fb.pronunciation.map((p) => `<li><b>${esc(p.word)}</b> <button class="mini-btn" data-say="${esc(p.word)}">🔊</button> ${esc(p.tip_es)}</li>`).join('')}</ul></div>`);
+    parts.push(`<div class="fb-pron"><b>🎙️ Pronunciación</b><ul>${fb.pronunciation.map((p) => `<li><b>${esc(p.word)}</b>${p.word_pron ? ` <small class="pron">(${esc(p.word_pron)})</small>` : ''} <button class="mini-btn" data-say="${esc(p.word)}">🔊</button> ${esc(p.tip_es)}</li>`).join('')}</ul></div>`);
   return parts.join('') || '<div class="fb-overall">👍 ¡Perfecto!</div>';
 }
 
@@ -763,6 +766,7 @@ function renderLesson() {
         <button id="fresh-lesson" class="secondary">🔄 Nuevos ejercicios</button>
       </div>
       ${lesson.savedAt ? `<small class="muted">Lección guardada el ${new Date(lesson.savedAt).toLocaleDateString('es-CL')} (sin costo al abrirla).</small>` : ''}
+      ${data.examples.some((ex) => !ex.pron) ? `<p class="tip">ℹ️ Esta lección se guardó con una versión anterior, sin pronunciación escrita ni los usos alternativos. Toca <b>🔄 Nuevos ejercicios</b> para actualizarla.</p>` : ''}
     </section>
     <section class="card">
       <h3>Ejercicios</h3>
@@ -815,7 +819,7 @@ async function gradeLesson(e) {
       const box = form.querySelector(`.exercise[data-id="${r.id}"]`);
       if (!box) continue;
       box.classList.add(r.correct ? 'correct' : 'wrong');
-      box.querySelector('.result').innerHTML = `${r.correct ? '✅' : '❌'} <b>${esc(r.correct_answer)}</b><br><small>${esc(r.explanation_es)}</small>`;
+      box.querySelector('.result').innerHTML = `${r.correct ? '✅' : '❌'} <b>${esc(r.correct_answer)}</b>${r.correct_answer_es ? `<br><small class="muted">🇪🇸 ${esc(r.correct_answer_es)}</small>` : ''}${r.correct_answer_pron ? `<br><small class="pron">🗣️ ${esc(r.correct_answer_pron)}</small>` : ''}<br><small>${esc(r.explanation_es)}</small>`;
       box.querySelector('.result').append(speakBtn(r.correct_answer));
     }
     recordModuleSession(lesson.topic.id, lesson.n, data.score);
