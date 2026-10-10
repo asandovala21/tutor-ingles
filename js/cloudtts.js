@@ -72,7 +72,13 @@ async function errorText(r) {
 async function voiceFor(characterId, lang) {
   const pref = PREFS[characterId] || PREFS[DEFAULT_BY_LANG[lang]] || PREFS.sarah;
   const lc = pref.lang;
-  const voices = (await listVoices(lc)).filter((v) => v.languageCodes?.includes(lc));
+  let voices;
+  try {
+    voices = (await listVoices(lc)).filter((v) => v.languageCodes?.includes(lc));
+  } catch {
+    // Si Google no deja listar voces, probamos directo con una voz conocida.
+    return `${lc}-Chirp3-HD-${pref.names[0]}`;
+  }
   for (const tier of TIER_ORDER) {
     const inTier = voices.filter((v) => tier.test(v.name));
     if (!inTier.length) continue;
@@ -138,7 +144,19 @@ export async function cloudAudio(text, { character, lang = 'en-AU', rate = 1 }) 
 /** Prueba la clave: devuelve los nombres de las voces elegidas por personaje. */
 export async function testCloud() {
   Object.keys(voiceLists).forEach((k) => delete voiceLists[k]);
+  let listError = '';
+  try {
+    await listVoices('en-AU');
+  } catch (e) {
+    listError = e.message;
+  }
   const out = {};
   for (const id of Object.keys(PREFS)) out[id] = await voiceFor(id, PREFS[id].lang);
+  // Prueba real de síntesis (texto corto) para confirmar que la clave puede generar audio.
+  try {
+    await synthesize(out.mick, 'en-AU', 1, 'Test.');
+  } catch (e) {
+    throw new Error(`Generar audio: ${e.message}${listError ? ` · Listar voces: ${listError}` : ''}`);
+  }
   return out;
 }
