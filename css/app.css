@@ -258,3 +258,19 @@ menu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; margin: 1
 .level-badge { background: var(--accent); color: #fff; font-weight: 700; font-size: 1.3rem; border-radius: 12px; padding: 8px 12px; min-width: 64px; text-align: center; }
 .bar { height: 10px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 6px 0 10px; }
 .bar i { display: block; height: 100%; width: var(--w); background: var(--accent); }
+
+/* usos y comparación de tiempos */
+details.card > summary { list-style: none; cursor: pointer; color: var(--text); }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::after { content: '▾'; float: right; color: var(--accent); }
+details.card[open] > summary::after { content: '▴'; }
+.uses { padding-left: 18px; }
+.uses li { margin: 10px 0; }
+.uses li.alt .use-name { color: var(--accent); }
+.use-name { font-weight: 600; margin-bottom: 2px; }
+.examples-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.quiz { padding-left: 18px; }
+.quiz li { margin: 8px 0; }
+.quiz li.correct { border-left: 4px solid var(--ok); padding-left: 8px; }
+.quiz li.wrong { border-left: 4px solid var(--bad); padding-left: 8px; }
+.why { display: block; margin-top: 4px; }

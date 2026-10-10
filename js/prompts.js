@@ -1,6 +1,7 @@
 // Prompts de sistema y esquemas JSON para cada modo.
 import { KNOWN_GRAMMAR, GRAMMAR_TOPICS, MAX_SESSIONS, topicById } from './curriculum.js';
 import { progress } from './store.js';
+import { TENSE_USES, TENSE_COMPARISONS } from './tenses.js';
 
 const LEARNER_PROFILE = `The learner is a Spanish-speaking professional from Chile who works in Data & Digital (Technology, BHP Minerals Americas, sites like Escondida and Spence). Their meetings in English are with global teams in Australia (data utilities / data engineering, platform and architecture teams, cybersecurity, project managers) and with vendors. Many Australian colleagues are Indian-Australian. Typical topics: integrating vendor APIs and equipment data into Snowflake (RAW / QA / Conformed layers), data paths from mobile equipment to the cloud (OT / IT / DMZ, VPN, LTE networks, field gateways), 1 Hz data vs batch vs real-time, data volume and completeness, support models (global vs local, knowledge transfer, transition to operations), governance (HLD, architecture panel, CIA rating, cybersecurity assessments), cost estimates and vendor quotes, data quality, reusable ingestion patterns, project status updates, and following up on open actions.
 
@@ -211,8 +212,47 @@ const TOPIC_NOTES = {
   level0: 'The learner already uses this structure but needs to master it: cover ALL its uses (including the less obvious ones), typical Spanish-speaker mistakes, and the contrast with the tenses it is confused with.',
 };
 
+// Qué usos de TENSE_USES debe cubrir cada tema de gramática.
+const TOPIC_TENSES = {
+  'verb-tenses-map': TENSE_USES.map((t) => t.id),
+  'tense-alt-uses': TENSE_USES.map((t) => t.id),
+  'present-simple': ['present-simple'],
+  'present-continuous': ['present-continuous'],
+  'verb-to-be': ['to-be'],
+  'past-simple': ['past-simple'],
+  'past-continuous': ['past-continuous'],
+  'present-perfect': ['present-perfect'],
+  'present-perfect-continuous': ['present-perfect-continuous'],
+  'past-perfect': ['past-perfect'],
+  'past-perfect-continuous': ['past-perfect-continuous'],
+  'future-forms': ['will', 'going-to', 'present-continuous', 'present-simple'],
+  'will-uses': ['will'],
+  'future-continuous': ['future-continuous'],
+  'future-perfect': ['future-perfect'],
+  'future-perfect-continuous': ['future-perfect'],
+  'would-conditional': ['would'],
+  'would-past-habits': ['would', 'used-to'],
+  'would-complaints': ['would'],
+  'used-to-forms': ['used-to'],
+  'past-politeness': ['past-simple', 'past-continuous'],
+};
+
+function tenseUsesNote(topicId) {
+  const ids = TOPIC_TENSES[topicId];
+  if (!ids) return '';
+  const only = topicId === 'tense-alt-uses';
+  const lines = TENSE_USES.filter((t) => ids.includes(t.id)).map((t) =>
+    `- ${t.name}: ${t.uses.filter((u) => !only || u.alt).map((u) => `${u.alt ? '✨' : ''}${u.name} (e.g. "${u.ex}")`).join('; ')}`,
+  );
+  return `Cover ALL of these uses (✨ = less obvious "alternative" uses that learners usually miss; mark them with ✨ in the explanation too):\n${lines.join('\n')}`;
+}
+
 export function lessonRequest(topic, n, previousScores) {
-  const note = TOPIC_NOTES[topic.id] || (topic.level === 0 ? TOPIC_NOTES.level0 : '');
+  let note = TOPIC_NOTES[topic.id] || (topic.level === 0 ? TOPIC_NOTES.level0 : '');
+  if (topic.id === 'tense-comparisons') {
+    note = `Teach how to CHOOSE between confusable tenses. Pairs: ${TENSE_COMPARISONS.map((c) => `${c.a} vs ${c.b} (${c.rule})`).join(' | ')}. Exercises must force a choice between the two tenses of a pair, in meeting contexts.`;
+  }
+  note = [note, tenseUsesNote(topic.id)].filter(Boolean).join('\n');
   return `Create session ${n} of ${MAX_SESSIONS} for the topic "${topic.title}" (${topic.es}).
 ${note}
 ${SESSION_PLANS[n]}
@@ -320,6 +360,7 @@ ${LEARNER_PROFILE}
 - Be practical and concrete: short explanations, then examples from THEIR work (data integration, Snowflake, architecture, vendors, support models, status updates, follow-ups) and, when relevant, from their real meetings below.
 - When they ask "how do I say X", give 2-3 natural options (simple/clear first, then more native), mark which one Australian colleagues would use, and add pronunciation tips for difficult words (Spanish-speaker issues).
 - When they ask what to practise, use their progress and mistakes below to recommend specific grammar modules, scenarios or sound sets from the app.
+- When they ask about which tense to use, compare the confusable tenses explicitly (rule, signal words, how to decide) and include the less obvious "alternative" uses (e.g. present continuous for temporary or annoying habits and arrangements, present simple for timetables, past tenses for politeness, will for assumptions, would/used to for past habits).
 - When they ask to practise a topic, briefly explain it (with examples from their work) and then give ONE short exercise at a time (fill the gap, translate, transform, or "answer this meeting question"); wait for their answer, correct it kindly, explain the mistake, and give the next one. After 5 exercises, summarise how they did.
 - For key English phrases you recommend, add the approximate pronunciation in parentheses on the next line. ${PRON_GUIDE}
 - When they ask to prepare a meeting or an email, write it in clear, simple, professional English that they can actually say, and explain new structures briefly.

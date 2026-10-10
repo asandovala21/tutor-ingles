@@ -26,6 +26,9 @@ export const MAX_SESSIONS = 5;
 export const GRAMMAR_TOPICS = [
   // ---- Repaso: bases que ya usas (para dominarlas de verdad) ----
   { id: 'verb-tenses-map', level: 0, star: true, title: 'Mapa de los 12 tiempos verbales', es: 'Todos los tiempos en una tabla: forma, cuándo usar cada uno y cómo se diferencian' },
+  { id: 'tense-comparisons', level: 0, star: true, title: 'Comparar tiempos: cuál usar y cuándo', es: 'present simple vs continuous, past simple vs present perfect, will vs going to, used to vs would…' },
+  { id: 'tense-alt-uses', level: 0, star: true, title: 'Usos "alternativos" de los tiempos verbales', es: 'continuous para hábitos temporales/molestos y futuro, simple para horarios, pasado para cortesía, will para suposiciones' },
+  { id: 'verb-to-be', level: 0, title: 'Verbo to be en todos sus usos', es: 'am/is/are/was/were, there is/are, be + -ing, voz pasiva, be about to, be supposed to' },
   { id: 'present-simple', level: 0, title: 'Present simple: hábitos, hechos y horarios', es: 'We meet every Tuesday / The API returns JSON / The call starts at 9' },
   { id: 'present-continuous', level: 0, title: 'Present continuous: ahora, temporal y cambios', es: "We're testing the pipeline this week / The volume is increasing" },
   { id: 'past-simple', level: 0, title: 'Past simple: regulares, irregulares y preguntas con did', es: 'We met the vendor yesterday / Did they send the HLD?' },
@@ -42,6 +45,7 @@ export const GRAMMAR_TOPICS = [
   { id: 'reported-speech', level: 1, star: true, title: 'Reported speech (estilo indirecto)', es: 'The vendor confirmed that both systems can coexist / He said he would send it' },
   { id: 'there-be', level: 1, title: 'There + be en todos los tiempos', es: "There's been a change / There will be a single database / There were three options" },
   { id: 'conditionals', level: 1, star: true, title: 'Condicionales 1, 2, 3 y mixtos', es: "If they talk to him, they'll sort it out / If we had added that entity, it would have been quicker" },
+  { id: 'past-politeness', level: 1, star: true, title: 'Pasado para sonar cortés: I was wondering / I wanted to ask', es: 'I was wondering if you could… / I wanted to check… / Did you want to…?' },
   { id: 'modal-verbs', level: 1, star: true, title: 'Modal verbs: can, could, may, might, must, should, would, have to, need to', es: 'Habilidad, permiso, obligación, posibilidad y consejo en reuniones' },
   { id: 'countable-another', level: 1, star: true, title: 'Plurales, contables/incontables y another / other / others', es: 'another question / other questions / the data is / my job (no "my jobs")' },
   { id: 'articles', level: 1, title: 'Artículos: a / an / the / sin artículo', es: 'a meeting, an API, the HLD we discussed, data is important' },
@@ -70,6 +74,7 @@ export const GRAMMAR_TOPICS = [
   { id: 'past-perfect-continuous', level: 3, title: 'Past perfect continuous', es: 'We had been waiting for the PO for two weeks' },
   { id: 'future-perfect', level: 3, title: 'Future perfect', es: "By November we'll have deployed it to production" },
   { id: 'future-perfect-continuous', level: 3, title: 'Future perfect continuous', es: "By June we'll have been running the pilot for six months" },
+  { id: 'will-uses', level: 2, title: 'Todos los usos de will (más allá del futuro)', es: "Decisiones, promesas, suposiciones (That'll be the vendor), hábitos y quejas (it won't work)" },
   { id: 'would-conditional', level: 3, title: 'Would condicional', es: 'That would bring the costs down / Would it be good to have a plan by next week?' },
   { id: 'would-complaints', level: 3, title: 'Would para quejas e irritación', es: 'I wish they would reply to the email / They would say that!' },
   { id: 'wish-if-only', level: 3, title: 'Wish / if only', es: 'I wish we had the volume estimate / If only the documentation were clearer' },

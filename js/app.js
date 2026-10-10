@@ -10,6 +10,7 @@ import {
   listTranscripts, saveTranscript, deleteTranscript, exportAll, importAll, getLesson, putLesson,
 } from './store.js';
 import { pdfToText } from './pdf.js';
+import { TENSE_USES, TENSE_COMPARISONS } from './tenses.js';
 import { monthlyUsage, monthlyLimit, testCloud, freeChars } from './cloudtts.js';
 import { speak, stopSpeaking, resetCloudWarning, listen, canListen, avatarSVG, animateMouth, compareWords, englishVoices, hasVoiceFor } from './speech.js';
 
@@ -565,6 +566,8 @@ function renderGrammar() {
     <section class="card">
       <h2>Módulos de gramática</h2>
       <p class="muted">Cada tema tiene hasta ${MAX_SESSIONS} sesiones: 1) explicación, 2) práctica, 3) traducción, 4) hablar, 5) evaluación. Las lecciones quedan guardadas en tu teléfono: abrirlas de nuevo no gasta créditos. ⭐ = aparece mucho en tus reuniones.</p>
+      <button id="tense-uses" class="secondary big">📚 Usos de cada tiempo verbal (incluye los ✨ alternativos)</button>
+      <button id="tense-compare" class="secondary big">⚖️ Comparar tiempos: ¿cuál uso?</button>
       <button id="phrases" class="secondary big">💬 Frases de reunión para escuchar y repetir</button>
     </section>
     ${recs.length ? `<section class="card"><h3>🎯 Recomendado para ti</h3><p class="muted small">Según los errores que más repites al hablar.</p><ul class="topics">${recs.map(({ topic: t, n }) => `<li><button class="topic" data-id="${t.id}"><span><strong>${esc(t.title)}</strong><br><small class="muted">${n} error(es) en tus reuniones</small></span><span>›</span></button></li>`).join('')}</ul></section>` : ''}
@@ -587,6 +590,96 @@ function renderGrammar() {
       </section>`).join('')}`;
   view.querySelectorAll('.topic').forEach((b) => b.addEventListener('click', () => renderTopic(topicById(b.dataset.id))));
   $('#phrases').addEventListener('click', renderPhrases);
+  $('#tense-uses').addEventListener('click', () => renderTenseUses());
+  $('#tense-compare').addEventListener('click', () => renderComparisons());
+}
+
+const PRON_LEGEND = '🗣️ = pronunciación aproximada; la sílaba en MAYÚSCULA va con más fuerza. z = "th" de think · dh = "th" de this · j = h suave.';
+
+function renderTenseUses(openId) {
+  view.innerHTML = `
+    <button class="link" id="back">← Temas</button>
+    <section class="card">
+      <h2>Usos de cada tiempo verbal</h2>
+      <p class="muted">Todos los usos de cada tiempo. ✨ = usos "alternativos" que se suelen pasar por alto. Toca un tiempo para abrirlo.</p>
+      <p class="muted small">${PRON_LEGEND}</p>
+    </section>
+    ${TENSE_USES.map((t) => `
+      <details class="card tense" data-id="${t.id}" ${t.id === openId ? 'open' : ''}>
+        <summary><strong>${esc(t.name)}</strong> <small class="muted">${t.uses.filter((u) => u.alt).length ? `· ${t.uses.filter((u) => u.alt).length} ✨` : ''}</small><br><small class="muted">${esc(t.form)}</small></summary>
+        <ol class="uses">${t.uses.map((u, i) => `
+          <li class="${u.alt ? 'alt' : ''}" data-i="${i}">
+            <div class="use-name">${u.alt ? '✨ ' : ''}${esc(u.name)}</div>
+            <div class="examples-row">${phraseHTML(u.ex, u.es, u.pron)}</div>
+          </li>`).join('')}
+        </ol>
+        <button class="secondary practice">💬 Practicar ${esc(t.name)} en Dudas</button>
+      </details>`).join('')}`;
+  $('#back').addEventListener('click', renderGrammar);
+  view.querySelectorAll('details.tense').forEach((d) => {
+    const t = TENSE_USES.find((x) => x.id === d.dataset.id);
+    d.querySelectorAll('.uses li').forEach((li) => li.querySelector('.examples-row').append(speakBtn(t.uses[li.dataset.i].ex)));
+    d.querySelector('.practice').addEventListener('click', () =>
+      openChatWith(`Quiero practicar todos los usos de "${t.name}", incluidos los alternativos (${t.uses.filter((u) => u.alt).map((u) => u.name).join('; ') || 'ninguno'}). Explícame con ejemplos de mis reuniones y hazme practicar uno por uno.`),
+    );
+  });
+}
+
+function renderComparisons() {
+  view.innerHTML = `
+    <button class="link" id="back">← Temas</button>
+    <section class="card">
+      <h2>¿Cuál tiempo uso?</h2>
+      <p class="muted">Los pares que más se confunden: regla, palabras señal, cómo decidir, ejemplos y un mini-quiz.</p>
+      <p class="muted small">${PRON_LEGEND}</p>
+    </section>
+    ${TENSE_COMPARISONS.map((c) => {
+      const best = progress.compare?.[c.id];
+      return `
+      <details class="card compare" data-id="${c.id}">
+        <summary><strong>${esc(c.a)} vs ${esc(c.b)}</strong>${best != null ? ` <span class="tag">${best}%</span>` : ''}</summary>
+        <p><b>Regla:</b> ${esc(c.rule)}</p>
+        <p><b>Palabras señal:</b> ${esc(c.signals)}</p>
+        <p class="tip">🧭 <b>Cómo decidir:</b> ${esc(c.decide)}</p>
+        <ul class="examples">${c.examples.map((ex, i) => `<li data-i="${i}">${phraseHTML(ex.en, ex.es, ex.pron)}</li>`).join('')}</ul>
+        <h3>Mini-quiz</h3>
+        <ol class="quiz">${c.quiz.map((q, qi) => `
+          <li data-q="${qi}"><p>${esc(q.q)}</p>
+            <div class="seg small">${q.options.map((o, oi) => `<label><input type="radio" name="${c.id}-${qi}" value="${oi}"/> ${esc(o)}</label>`).join('')}</div>
+            <small class="why" hidden></small></li>`).join('')}
+        </ol>
+        <div class="row">
+          <button class="primary check">Comprobar</button>
+          <button class="secondary practice">💬 Practicar en Dudas</button>
+        </div>
+      </details>`;
+    }).join('')}`;
+  $('#back').addEventListener('click', renderGrammar);
+  view.querySelectorAll('details.compare').forEach((d) => {
+    const c = TENSE_COMPARISONS.find((x) => x.id === d.dataset.id);
+    d.querySelectorAll('.examples li').forEach((li) => li.append(speakBtn(c.examples[li.dataset.i].en)));
+    d.querySelector('.check').addEventListener('click', () => {
+      let ok = 0;
+      c.quiz.forEach((q, qi) => {
+        const li = d.querySelector(`[data-q="${qi}"]`);
+        const sel = d.querySelector(`input[name="${c.id}-${qi}"]:checked`);
+        const right = sel && Number(sel.value) === q.answer;
+        if (right) ok++;
+        const why = li.querySelector('.why');
+        why.hidden = false;
+        why.textContent = `${right ? '✅' : '❌'} ${q.options[q.answer]} — ${q.why}`;
+        li.classList.toggle('correct', !!right);
+        li.classList.toggle('wrong', !right);
+      });
+      const score = Math.round((ok / c.quiz.length) * 100);
+      progress.compare = { ...(progress.compare || {}), [c.id]: Math.max(score, progress.compare?.[c.id] ?? 0) };
+      saveProgress();
+      toast(`${ok}/${c.quiz.length} correctas`);
+    });
+    d.querySelector('.practice').addEventListener('click', () =>
+      openChatWith(`Se me confunden ${c.a} y ${c.b}. Explícame cuándo usar cada uno con ejemplos de mis reuniones y hazme practicar con ejercicios uno por uno, eligiendo entre los dos.`),
+    );
+  });
 }
 
 function renderPhrases() {
