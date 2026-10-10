@@ -246,3 +246,15 @@ menu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; margin: 1
 .mini-btn.inline { position: static; padding: 0 6px; min-height: 24px; font-size: .8rem; vertical-align: middle; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 16px; padding: 6px 10px; font-size: .85rem; text-align: left; }
+
+/* traducción, pronunciación escrita y nivel */
+.pron { color: var(--accent); font-style: italic; }
+.target-help { margin-top: -4px; }
+.bubble-tools { display: flex; gap: 6px; margin-top: 6px; }
+.bubble .bubble-tools .mini-btn { position: static; margin: 0; }
+.translation { margin-top: 6px; border-top: 1px dashed var(--line); padding-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.translation[hidden] { display: none; }
+.level-card .level-top { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+.level-badge { background: var(--accent); color: #fff; font-weight: 700; font-size: 1.3rem; border-radius: 12px; padding: 8px 12px; min-width: 64px; text-align: center; }
+.bar { height: 10px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 6px 0 10px; }
+.bar i { display: block; height: 100%; width: var(--w); background: var(--accent); }

@@ -86,20 +86,25 @@ let dbPromise;
 
 function db() {
   dbPromise ||= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('transcripts', { keyPath: 'id' });
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains('transcripts')) d.createObjectStore('transcripts', { keyPath: 'id' });
+      // Lecciones generadas, para no volver a pedirlas a Claude.
+      if (!d.objectStoreNames.contains('lessons')) d.createObjectStore('lessons', { keyPath: 'key' });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
   return dbPromise;
 }
 
-async function tx(mode, fn) {
+async function tx(mode, fn, store = 'transcripts') {
   const d = await db();
   return new Promise((resolve, reject) => {
-    const t = d.transaction('transcripts', mode);
-    const result = fn(t.objectStore('transcripts'));
-    t.oncomplete = () => resolve(result.result ?? result);
+    const t = d.transaction(store, mode);
+    const result = fn(t.objectStore(store));
+    t.oncomplete = () => resolve(result instanceof IDBRequest ? result.result : result);
     t.onerror = () => reject(t.error);
   });
 }
@@ -115,6 +120,15 @@ export function saveTranscript(name, text) {
 
 export function deleteTranscript(id) {
   return tx('readwrite', (s) => s.delete(id));
+}
+
+// ---------- Lecciones en caché ----------
+export function getLesson(key) {
+  return tx('readonly', (s) => s.get(key), 'lessons');
+}
+
+export function putLesson(key, value) {
+  return tx('readwrite', (s) => s.put({ key, ...value, savedAt: new Date().toISOString() }), 'lessons');
 }
 
 export async function exportAll() {

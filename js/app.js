@@ -7,7 +7,7 @@ import {
 } from './prompts.js';
 import {
   settings, progress, saveSettings, saveProgress, resetProgress, logErrors, markIntroduced, recordModuleSession,
-  listTranscripts, saveTranscript, deleteTranscript, exportAll, importAll,
+  listTranscripts, saveTranscript, deleteTranscript, exportAll, importAll, getLesson, putLesson,
 } from './store.js';
 import { pdfToText } from './pdf.js';
 import { monthlyUsage, monthlyLimit, testCloud, freeChars } from './cloudtts.js';
@@ -138,6 +138,11 @@ function attachMic(button, input, { onDone } = {}) {
   });
 }
 
+/** Frase en inglés con traducción y pronunciación escrita debajo. */
+function phraseHTML(en, es, pr) {
+  return `<span><b>${esc(en)}</b>${es ? `<br><small class="muted">${esc(es)}</small>` : ''}${pr ? `<br><small class="pron">🗣️ ${esc(pr)}</small>` : ''}</span>`;
+}
+
 function speakBtn(text, lang = 'en-AU', pitch = 1, character) {
   const b = document.createElement('button');
   b.className = 'mini-btn';
@@ -156,7 +161,61 @@ function go(tab) {
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   view.innerHTML = '';
   view.scrollTop = 0;
-  tabs[tab]();
+  return tabs[tab]();
+}
+
+/** Abre el chat de Dudas y envía una pregunta. */
+async function openChatWith(text) {
+  await go('chat');
+  sendChat(text);
+}
+
+// ---------------- nivel ----------------
+
+/** Avance por tema (0-1): sesiones aprobadas (≥60%) de 5. */
+function topicProgress(id) {
+  const ses = progress.modules[id]?.sessions || [];
+  return Math.min(1, ses.filter((x) => x.score >= 60).length / MAX_SESSIONS);
+}
+
+function levelInfo() {
+  const all = GRAMMAR_TOPICS.map((t) => topicProgress(t.id));
+  const overall = all.reduce((a, b) => a + b, 0) / all.length;
+  const byLevel = [0, 1, 2, 3].map((lvl) => {
+    const ts = GRAMMAR_TOPICS.filter((t) => t.level === lvl);
+    return ts.reduce((a, t) => a + topicProgress(t.id), 0) / ts.length;
+  });
+  const mastered = GRAMMAR_TOPICS.filter((t) => (progress.modules[t.id]?.sessions || []).some((x) => x.n === MAX_SESSIONS && x.score >= 70)).length;
+  const steps = [[0.15, 'B1'], [0.35, 'B1+'], [0.55, 'B2'], [0.75, 'B2+'], [0.9, 'C1-'], [1.01, 'C1']];
+  const idx = steps.findIndex(([th]) => overall < th);
+  const level = steps[idx][1];
+  const next = steps[idx + 1]?.[1];
+  const prevTh = idx ? steps[idx - 1][0] : 0;
+  const toNext = Math.round(((overall - prevTh) / (steps[idx][0] - prevTh)) * 100);
+  return { overall, byLevel, mastered, level, next, toNext };
+}
+
+function levelCardHTML() {
+  const L = levelInfo();
+  const names = ['Repaso', 'Prioridad 1', 'Prioridad 2', 'Avanzado'];
+  return `<section class="card level-card">
+    <div class="level-top"><span class="level-badge">${L.level}</span>
+      <div><b>Nivel estimado de gramática</b><br><small class="muted">${L.next ? `${Math.max(0, L.toNext)}% del camino a ${L.next}` : 'Nivel máximo de la app'} · ${L.mastered} temas dominados</small></div></div>
+    <div class="bar"><i style="--w:${Math.round(L.overall * 100)}%"></i></div>
+    <ul class="bars">${names.map((n, i) => `<li><span>${n}</span><i style="--w:${Math.max(2, Math.round(L.byLevel[i] * 100))}%"></i><b>${Math.round(L.byLevel[i] * 100)}%</b></li>`).join('')}</ul>
+    <small class="muted">Se calcula con las sesiones de gramática aprobadas (≥60%). Es una guía, no un examen oficial.</small>
+  </section>`;
+}
+
+/** Temas recomendados según tus errores frecuentes en reuniones. */
+function recommendedTopics() {
+  const counts = {};
+  for (const e of progress.errors) if (topicById(e.grammar_topic)) counts[e.grammar_topic] = (counts[e.grammar_topic] || 0) + 1;
+  return Object.entries(counts)
+    .filter(([id]) => topicProgress(id) < 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([id, n]) => ({ topic: topicById(id), n }));
 }
 
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => go(b.dataset.tab)));
@@ -392,9 +451,24 @@ function appendEntry(entry) {
     el.innerHTML = `<p>${esc(entry.text)}</p>`;
   } else if (entry.kind === 'them') {
     el.className = `bubble them ${settings.hideReplyText ? 'hidden-text' : ''}`;
-    el.innerHTML = `<small>${esc(entry.speaker)}</small><p>${esc(entry.text)}</p>`;
+    el.innerHTML = `<small>${esc(entry.speaker)}</small><p>${esc(entry.text)}</p>${entry.es || entry.pron ? `<div class="translation" hidden>${entry.es ? `<small>🇪🇸 ${esc(entry.es)}</small>` : ''}${entry.pron ? `<small class="pron">🗣️ ${esc(entry.pron)}</small>` : ''}</div>` : ''}`;
     el.addEventListener('click', () => el.classList.remove('hidden-text'));
-    el.append(speakBtn(entry.text, meeting.character.lang, meeting.character.pitch, meeting.character.id));
+    const tools = document.createElement('div');
+    tools.className = 'bubble-tools';
+    tools.append(speakBtn(entry.text, meeting.character.lang, meeting.character.pitch, meeting.character.id));
+    if (entry.es || entry.pron) {
+      const t = document.createElement('button');
+      t.className = 'mini-btn';
+      t.textContent = '🇪🇸';
+      t.title = 'Ver traducción y pronunciación';
+      t.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const box = el.querySelector('.translation');
+        box.hidden = !box.hidden;
+      });
+      tools.append(t);
+    }
+    el.append(tools);
   } else if (entry.kind === 'feedback') {
     el.className = 'feedback';
     el.innerHTML = feedbackHTML(entry.fb);
@@ -412,7 +486,7 @@ function feedbackHTML(fb) {
   const parts = [];
   if (fb.overall_es) parts.push(`<div class="fb-overall">${md(fb.overall_es)}</div>`);
   if (fb.corrected) parts.push(`<div class="fb-row"><b>✅ Corregido:</b> ${esc(fb.corrected)} <button class="mini-btn" data-say="${esc(fb.corrected)}">🔊</button></div>`);
-  if (fb.better_native) parts.push(`<div class="fb-row"><b>💬 Más natural:</b> ${esc(fb.better_native)} <button class="mini-btn" data-say="${esc(fb.better_native)}">🔊</button></div>`);
+  if (fb.better_native) parts.push(`<div class="fb-row"><b>💬 Más natural:</b> ${esc(fb.better_native)} <button class="mini-btn" data-say="${esc(fb.better_native)}">🔊</button>${fb.better_native_pron ? `<br><small class="pron">🗣️ ${esc(fb.better_native_pron)}</small>` : ''}</div>`);
   if (fb.errors?.length)
     parts.push(`<ul class="fb-errors">${fb.errors.map((e) => `<li><s>${esc(e.original)}</s> → <b>${esc(e.correction)}</b><br><small>${esc(e.explanation_es)}</small></li>`).join('')}</ul>`);
   if (fb.new_grammar?.topic_id)
@@ -464,7 +538,7 @@ async function meetingTurn(text, stt) {
       if (fb?.errors?.length) logErrors(fb.errors);
       if (fb?.new_grammar?.topic_id) markIntroduced(fb.new_grammar.topic_id);
     }
-    const reply = { kind: 'them', speaker: data.speaker || meeting.character.name, text: data.reply };
+    const reply = { kind: 'them', speaker: data.speaker || meeting.character.name, text: data.reply, es: data.reply_es, pron: data.reply_pron };
     recordTurn(reply.speaker, data.reply);
     meeting.log.push(reply);
     appendEntry(reply);
@@ -484,14 +558,17 @@ async function meetingTurn(text, stt) {
 const lesson = { topic: null, n: 0, data: null, history: [] };
 
 function renderGrammar() {
-  const levelName = { 1: 'Prioridad 1 · lo más usado en tus reuniones', 2: 'Prioridad 2 · frecuente', 3: 'Avanzado' };
+  const levelName = { 0: 'Repaso · domina lo que ya usas (todos los tiempos)', 1: 'Prioridad 1 · lo más usado en tus reuniones', 2: 'Prioridad 2 · frecuente', 3: 'Avanzado' };
+  const recs = recommendedTopics();
   view.innerHTML = `
+    ${levelCardHTML()}
     <section class="card">
       <h2>Módulos de gramática</h2>
-      <p class="muted">Cada tema tiene hasta ${MAX_SESSIONS} sesiones: 1) explicación, 2) práctica, 3) traducción, 4) hablar, 5) evaluación. El orden y los ejemplos salen de tus reuniones reales. ⭐ = aparece mucho en tus reuniones.</p>
+      <p class="muted">Cada tema tiene hasta ${MAX_SESSIONS} sesiones: 1) explicación, 2) práctica, 3) traducción, 4) hablar, 5) evaluación. Las lecciones quedan guardadas en tu teléfono: abrirlas de nuevo no gasta créditos. ⭐ = aparece mucho en tus reuniones.</p>
       <button id="phrases" class="secondary big">💬 Frases de reunión para escuchar y repetir</button>
     </section>
-    ${[1, 2, 3].map((lvl) => `
+    ${recs.length ? `<section class="card"><h3>🎯 Recomendado para ti</h3><p class="muted small">Según los errores que más repites al hablar.</p><ul class="topics">${recs.map(({ topic: t, n }) => `<li><button class="topic" data-id="${t.id}"><span><strong>${esc(t.title)}</strong><br><small class="muted">${n} error(es) en tus reuniones</small></span><span>›</span></button></li>`).join('')}</ul></section>` : ''}
+    ${[0, 1, 2, 3].map((lvl) => `
       <section class="card">
         <h3>${levelName[lvl]}</h3>
         <ul class="topics">
@@ -518,11 +595,12 @@ function renderPhrases() {
     <section class="card">
       <h2>Frases de reunión</h2>
       <p class="muted">Expresiones que usan tus colegas en reuniones reales. Toca 🔊 para escucharlas con acento australiano y repítelas en voz alta.</p>
+      <p class="muted small">🗣️ = pronunciación aproximada; la sílaba en MAYÚSCULA va con más fuerza. z = "th" de think · dh = "th" de this · j = h suave (solo aire).</p>
     </section>
     ${PHRASE_GROUPS.map((g, gi) => `
       <section class="card">
         <h3>${esc(g.title)}</h3>
-        <ul class="examples">${g.items.map(([en, es], i) => `<li data-g="${gi}" data-i="${i}"><span><b>${esc(en)}</b><br><small class="muted">${esc(es)}</small></span></li>`).join('')}</ul>
+        <ul class="examples">${g.items.map(([en, es, pr], i) => `<li data-g="${gi}" data-i="${i}">${phraseHTML(en, es, pr)}</li>`).join('')}</ul>
       </section>`).join('')}`;
   $('#back').addEventListener('click', renderGrammar);
   view.querySelectorAll('.examples li').forEach((li) => li.append(speakBtn(PHRASE_GROUPS[li.dataset.g].items[li.dataset.i][0])));
@@ -547,14 +625,28 @@ function renderTopic(topic) {
   view.querySelectorAll('.session').forEach((b) => b.addEventListener('click', () => startLesson(topic, Number(b.dataset.n))));
 }
 
-async function startLesson(topic, n) {
+async function startLesson(topic, n, { fresh = false } = {}) {
+  const key = `${topic.id}:${n}`;
+  // Lección guardada en el teléfono: abrirla de nuevo no llama a Claude.
+  if (!fresh) {
+    try {
+      const saved = await getLesson(key);
+      if (saved?.data) {
+        Object.assign(lesson, { topic, n, data: saved.data, history: saved.history, savedAt: saved.savedAt });
+        renderLesson();
+        return;
+      }
+    } catch {}
+  }
   view.innerHTML = `<button class="link" id="back">← ${esc(topic.title)}</button><section class="card center"><div class="spinner"></div><p>Preparando la sesión ${n}…</p></section>`;
   $('#back').addEventListener('click', () => renderTopic(topic));
   const prev = (progress.modules[topic.id]?.sessions || []).map((s) => `S${s.n}: ${s.score}%`);
   const messages = [{ role: 'user', content: lessonRequest(topic, n, prev) }];
   try {
     const { data, assistantContent } = await askJSON({ system: lessonSystem(), messages, schema: LESSON_SCHEMA, effort: 'medium' });
-    Object.assign(lesson, { topic, n, data, history: [...messages, { role: 'assistant', content: assistantContent }] });
+    const history = [...messages, { role: 'assistant', content: assistantContent }];
+    Object.assign(lesson, { topic, n, data, history, savedAt: null });
+    putLesson(key, { data, history }).catch(() => {});
     renderLesson();
   } catch (e) {
     showError(e);
@@ -572,7 +664,12 @@ function renderLesson() {
       <p class="objective">🎯 ${esc(data.objective_es)}</p>
       <div class="explanation">${md(data.explanation_es)}</div>
       <h3>Ejemplos</h3>
-      <ul class="examples">${data.examples.map((ex, i) => `<li data-i="${i}"><span><b>${esc(ex.en)}</b><br><small class="muted">${esc(ex.es)}</small></span></li>`).join('')}</ul>
+      <ul class="examples">${data.examples.map((ex, i) => `<li data-i="${i}">${phraseHTML(ex.en, ex.es, ex.pron)}</li>`).join('')}</ul>
+      <div class="row">
+        <button id="ask-chat" class="secondary">💬 Tengo dudas: practicar en Dudas</button>
+        <button id="fresh-lesson" class="secondary">🔄 Nuevos ejercicios</button>
+      </div>
+      ${lesson.savedAt ? `<small class="muted">Lección guardada el ${new Date(lesson.savedAt).toLocaleDateString('es-CL')} (sin costo al abrirla).</small>` : ''}
     </section>
     <section class="card">
       <h3>Ejercicios</h3>
@@ -590,6 +687,12 @@ function renderLesson() {
       </form>
     </section>`;
   $('#back').addEventListener('click', () => renderTopic(topic));
+  $('#ask-chat').addEventListener('click', () =>
+    openChatWith(`Quiero practicar "${topic.title}" (sesión ${n}). Explícamelo de otra forma con ejemplos de mis reuniones y hazme practicar con ejercicios uno por uno.`),
+  );
+  $('#fresh-lesson').addEventListener('click', () => {
+    if (confirm('¿Generar una lección nueva con ejercicios distintos? (usa créditos de Claude)')) startLesson(topic, n, { fresh: true });
+  });
   view.querySelectorAll('.examples li').forEach((li) => li.append(speakBtn(data.examples[li.dataset.i].en)));
   view.querySelectorAll('.exercise').forEach((ex) => {
     const mic = ex.querySelector('.mic-mini');
@@ -639,7 +742,7 @@ async function gradeLesson(e) {
     const retry = document.createElement('button');
     retry.className = 'secondary';
     retry.textContent = 'Repetir esta sesión (nuevos ejercicios)';
-    retry.addEventListener('click', () => startLesson(lesson.topic, lesson.n));
+    retry.addEventListener('click', () => startLesson(lesson.topic, lesson.n, { fresh: true }));
     summary.append(next, retry);
     form.after(summary);
     summary.scrollIntoView({ behavior: 'smooth' });
@@ -656,7 +759,8 @@ const pron = { set: PRON_SETS[0], sentences: [...PRON_SETS[0].sentences], idx: 0
 
 function renderPron() {
   const s = pron.set;
-  const sentence = pron.sentences[pron.idx];
+  const item = pron.sentences[pron.idx];
+  const sentence = item.en;
   view.innerHTML = `
     <section class="card">
       <div class="seg">
@@ -676,6 +780,7 @@ function renderPron() {
       <small class="muted">Frase ${pron.idx + 1}/${pron.sentences.length}</small>
       ${pron.mode === 'speak'
         ? `<p class="target" id="target">${esc(sentence)}</p>
+           <p class="target-help"><small class="muted">🇪🇸 ${esc(item.es)}</small><br><small class="pron">🗣️ ${esc(item.pron)}</small></p>
            <div class="row">
              <button id="p-play" class="secondary">🔊 Escuchar</button>
              <button id="p-slow" class="secondary">🐢 Lento</button>
@@ -734,7 +839,7 @@ function renderPron() {
   } else {
     $('#p-check').addEventListener('click', () => {
       const { result, score } = compareWords(sentence, $('#dict').value);
-      $('#p-result').innerHTML = `<p class="score">${score}%</p><p class="words">${result.map((r) => `<span class="${r.ok ? 'ok' : 'bad'}">${esc(r.word)}</span>`).join(' ')}</p>`;
+      $('#p-result').innerHTML = `<p class="score">${score}%</p><p class="words">${result.map((r) => `<span class="${r.ok ? 'ok' : 'bad'}">${esc(r.word)}</span>`).join(' ')}</p><p><small class="muted">🇪🇸 ${esc(item.es)}</small><br><small class="pron">🗣️ ${esc(item.pron)}</small></p>`;
     });
   }
 }
@@ -776,7 +881,7 @@ async function moreSentences(e) {
   try {
     const { data } = await askJSON({
       system: pronSystem(),
-      messages: [{ role: 'user', content: `Write 6 new sentences (8-16 words) to practise "${pron.set.title}" (${pron.set.tip}). Each must contain several words with this sound, in BHP data & technology meeting context (APIs, Snowflake, architecture, vendors, project status)${pron.mode === 'listen' ? ', using natural Australian or Indian-Australian expressions a colleague would say' : ''}. Avoid these: ${pron.sentences.join(' | ')}` }],
+      messages: [{ role: 'user', content: `Write 6 new sentences (8-16 words) to practise "${pron.set.title}" (${pron.set.tip}). Each must contain several words with this sound, in BHP data & technology meeting context (APIs, Snowflake, architecture, vendors, project status)${pron.mode === 'listen' ? ', using natural Australian or Indian-Australian expressions a colleague would say' : ''}. Give the Spanish translation and the approximate pronunciation of each. Avoid these: ${pron.sentences.map((x) => x.en).join(' | ')}` }],
       schema: PRON_SENTENCES_SCHEMA,
     });
     pron.sentences.push(...data.sentences);
@@ -947,6 +1052,7 @@ function renderProgress() {
   for (const e of progress.errors) counts[e.grammar_topic] = (counts[e.grammar_topic] || 0) + 1;
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
   view.innerHTML = `
+    ${levelCardHTML()}
     <section class="card stats">
       <div><b>${modulesDone}</b><small>sesiones de gramática</small></div>
       <div><b>${progress.introduced.length}</b><small>temas vistos en reuniones</small></div>

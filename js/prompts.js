@@ -38,23 +38,29 @@ function learningBlock() {
 - Pronunciation practice (speech-recognition match score by sound set): ${pron.join('; ') || 'none yet'}.`;
 }
 
+// Pronunciación escrita para hispanohablantes (igual que en las frases fijas de la app).
+const PRON_GUIDE = `Approximate pronunciation written for a Spanish (Chilean) reader: hyphenated syllables, the stressed syllable in CAPITALS, Spanish spelling for sounds (e.g. "I have a question" -> "ai jav a KUES-chon", "data" -> "DEI-ta", "schedule" -> "SKE-yul"). Conventions: "z" = th as in think, "dh" = th as in this, "j" = soft English h, "ii"/"uu" = long vowels, "sh" as in share, "y" for the j/y sounds of "job"/"yes".`;
+
 // ---------------- Simulación de reuniones ----------------
 
 export const MEETING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['speaker', 'reply', 'feedback'],
+  required: ['speaker', 'reply', 'reply_es', 'reply_pron', 'feedback'],
   properties: {
     speaker: { type: 'string', description: 'Name of the participant who speaks this turn.' },
     reply: { type: 'string', description: 'What the participant says out loud, in English. 1-4 sentences, natural spoken style.' },
+    reply_es: { type: 'string', description: 'Natural Spanish translation of reply.' },
+    reply_pron: { type: 'string', description: 'Approximate pronunciation of reply for a Spanish reader.' },
     feedback: {
       type: 'object',
       additionalProperties: false,
-      required: ['overall_es', 'corrected', 'better_native', 'errors', 'new_grammar', 'pronunciation'],
+      required: ['overall_es', 'corrected', 'better_native', 'better_native_pron', 'errors', 'new_grammar', 'pronunciation'],
       properties: {
         overall_es: { type: 'string' },
         corrected: { type: 'string' },
         better_native: { type: 'string' },
+        better_native_pron: { type: 'string', description: 'Approximate pronunciation of better_native for a Spanish reader ("" if better_native is empty).' },
         errors: {
           type: 'array',
           items: {
@@ -114,11 +120,14 @@ ${transcript}
 </transcript>`
     : `Scenario: ${scenario.title} — ${scenario.desc}`}
 
+## Translation and pronunciation
+reply_es: a natural Spanish translation of your reply. reply_pron and feedback.better_native_pron: ${PRON_GUIDE}
+
 ## Feedback rules (the "feedback" object, after each learner turn)
 - overall_es: 1-2 short sentences in Spanish: what was good and the main thing to improve. Encouraging but honest.
 - corrected: the learner's utterance with grammar fixed minimally (empty string if it was already correct).
 - better_native: how a fluent professional at BHP would say it (more natural / diplomatic).
-- errors: every real grammar/vocabulary error with a short Spanish explanation. grammar_topic must be one of the curriculum ids above, or "known" if it's about grammar they already handle, or "vocab" for word choice.
+- errors: every real grammar/vocabulary error with a short Spanish explanation. grammar_topic must be the most specific curriculum id above (there are also review ids for basics such as present-simple, past-simple, questions-word-order, subject-verb, countable-another, articles, prepositions, false-friends), or "vocab" for word choice.
 - new_grammar: THIS IS KEY. Use the correction moment to introduce ONE grammar point from the curriculum that the learner has NOT been introduced to yet (see progress), preferably one that fits what they just tried to say, and prefer level-1 topics first (e.g. they said "I work here since 2020" -> introduce present perfect continuous). Explain it briefly in Spanish with 2 BHP examples. Then in your next turns, use that structure in your "reply" and ask questions that make the learner use it. If no new point fits naturally this turn, return topic_id "" and empty fields. Don't introduce a new point every single turn: about every 2-3 turns is right.
 - pronunciation: the learner's text comes from speech recognition. Words that the recognizer got wrong or with low confidence probably reveal pronunciation problems (typical Spanish-speaker issues: th, v/b, short i vs long ee, -ed endings, initial s+consonant, schwa, word stress, h). Give 0-3 tips in Spanish for words that matter. Empty array if typed or nothing notable.
 - When the user message is [START], open the meeting naturally (greeting + small talk or first agenda item), with empty feedback (empty strings and arrays, new_grammar.topic_id "").
@@ -164,8 +173,8 @@ export const LESSON_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['en', 'es'],
-        properties: { en: { type: 'string' }, es: { type: 'string' } },
+        required: ['en', 'es', 'pron'],
+        properties: { en: { type: 'string' }, es: { type: 'string' }, pron: { type: 'string' } },
       },
     },
     exercises: {
@@ -190,15 +199,22 @@ export function lessonSystem() {
   return [
     {
       type: 'text',
-      text: `You are an expert English grammar teacher creating short, practical lessons for a BHP professional.\n\n${LEARNER_PROFILE}\n\nEach topic has at most ${MAX_SESSIONS} sessions. Make every example and exercise about the learner's real work: Teams meetings with Perth/Brisbane, data integration, APIs, Snowflake, architecture, vendors, support models, governance, project status, emails and follow-ups. Be concise: a lesson should take about 10 minutes.`,
+      text: `You are an expert English grammar teacher creating short, practical lessons for a BHP professional.\n\n${LEARNER_PROFILE}\n\nEach topic has at most ${MAX_SESSIONS} sessions. Make every example and exercise about the learner's real work: Teams meetings with Perth/Brisbane, data integration, APIs, Snowflake, architecture, vendors, support models, governance, project status, emails and follow-ups. Be concise: a lesson should take about 10 minutes. Explanations must be complete and clear: the form (affirmative, negative, question, contractions), EVERY main use with a short example, time expressions, and the contrast with similar structures. For each example give the Spanish translation and the pronunciation. ${PRON_GUIDE}`,
       cache_control: { type: 'ephemeral' },
     },
     { type: 'text', text: progressBlock() },
   ];
 }
 
+const TOPIC_NOTES = {
+  'verb-tenses-map': 'This topic is an overview of ALL 12 English tenses (present/past/future × simple/continuous/perfect/perfect continuous) plus "used to" and "would": for each, the form, the main uses and one meeting example, and how to choose between them. Exercises: choosing the right tense in context.',
+  level0: 'The learner already uses this structure but needs to master it: cover ALL its uses (including the less obvious ones), typical Spanish-speaker mistakes, and the contrast with the tenses it is confused with.',
+};
+
 export function lessonRequest(topic, n, previousScores) {
+  const note = TOPIC_NOTES[topic.id] || (topic.level === 0 ? TOPIC_NOTES.level0 : '');
   return `Create session ${n} of ${MAX_SESSIONS} for the topic "${topic.title}" (${topic.es}).
+${note}
 ${SESSION_PLANS[n]}
 ${previousScores.length ? `Previous session scores for this topic: ${previousScores.join(', ')}. Adjust difficulty accordingly and revisit weak areas.` : ''}
 Give 4-6 examples with Spanish translations. Exercise ids: "e1", "e2", ...`;
@@ -260,7 +276,17 @@ export const PRON_SENTENCES_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['sentences'],
-  properties: { sentences: { type: 'array', items: { type: 'string' } } },
+  properties: {
+    sentences: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['en', 'es', 'pron'],
+        properties: { en: { type: 'string' }, es: { type: 'string' }, pron: { type: 'string', description: PRON_GUIDE } },
+      },
+    },
+  },
 };
 
 export function pronSystem() {
@@ -294,6 +320,8 @@ ${LEARNER_PROFILE}
 - Be practical and concrete: short explanations, then examples from THEIR work (data integration, Snowflake, architecture, vendors, support models, status updates, follow-ups) and, when relevant, from their real meetings below.
 - When they ask "how do I say X", give 2-3 natural options (simple/clear first, then more native), mark which one Australian colleagues would use, and add pronunciation tips for difficult words (Spanish-speaker issues).
 - When they ask what to practise, use their progress and mistakes below to recommend specific grammar modules, scenarios or sound sets from the app.
+- When they ask to practise a topic, briefly explain it (with examples from their work) and then give ONE short exercise at a time (fill the gap, translate, transform, or "answer this meeting question"); wait for their answer, correct it kindly, explain the mistake, and give the next one. After 5 exercises, summarise how they did.
+- For key English phrases you recommend, add the approximate pronunciation in parentheses on the next line. ${PRON_GUIDE}
 - When they ask to prepare a meeting or an email, write it in clear, simple, professional English that they can actually say, and explain new structures briefly.
 - Use simple Markdown: short paragraphs, "- " bullets and **bold**. No tables. Keep answers reasonably short unless they ask for more.${docs}`;
   const recentMeetings = meetings.length
