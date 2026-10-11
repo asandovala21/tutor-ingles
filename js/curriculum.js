@@ -26,6 +26,7 @@ export const MAX_SESSIONS = 5;
 export const GRAMMAR_TOPICS = [
   // ---- Repaso: bases que ya usas (para dominarlas de verdad) ----
   { id: 'verb-tenses-map', level: 0, star: true, title: 'Mapa de los 12 tiempos verbales', es: 'Todos los tiempos en una tabla: forma, cuándo usar cada uno y cómo se diferencian' },
+  { id: 'small-words', level: 0, star: true, title: 'Palabras pequeñas: yet, still, already, just, else, ever, again', es: "Have you sent it yet? / I'm still waiting / I've already done it / anything else?" },
   { id: 'tense-comparisons', level: 0, star: true, title: 'Comparar tiempos: cuál usar y cuándo', es: 'present simple vs continuous, past simple vs present perfect, will vs going to, used to vs would…' },
   { id: 'tense-alt-uses', level: 0, star: true, title: 'Usos "alternativos" de los tiempos verbales', es: 'continuous para hábitos temporales/molestos y futuro, simple para horarios, pasado para cortesía, will para suposiciones' },
   { id: 'verb-to-be', level: 0, title: 'Verbo to be en todos sus usos', es: 'am/is/are/was/were, there is/are, be + -ing, voz pasiva, be about to, be supposed to' },

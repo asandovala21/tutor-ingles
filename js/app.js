@@ -3,13 +3,14 @@ import { CHARACTERS, SCENARIOS, GRAMMAR_TOPICS, PRON_SETS, PHRASE_GROUPS, MAX_SE
 import {
   meetingSystem, learnerTurnText, MEETING_SCHEMA,
   lessonSystem, lessonRequest, LESSON_SCHEMA, gradeRequest, GRADE_SCHEMA,
-  pronSystem, PRON_FEEDBACK_SCHEMA, PRON_SENTENCES_SCHEMA, chatSystem,
+  pronSystem, PRON_FEEDBACK_SCHEMA, PRON_SENTENCES_SCHEMA, chatSystem, LEVELS, learnerLevel,
 } from './prompts.js';
 import {
   settings, progress, saveSettings, saveProgress, resetProgress, logErrors, markIntroduced, recordModuleSession,
   listTranscripts, saveTranscript, deleteTranscript, exportAll, importAll, getLesson, putLesson,
 } from './store.js';
 import { pdfToText } from './pdf.js';
+import { azureSttEnabled, startRecording, transcribe, assessPronunciation } from './azurestt.js';
 import { TENSE_USES, TENSE_COMPARISONS } from './tenses.js';
 import { monthlyUsage, monthlyLimit, testCloud, freeChars } from './cloudtts.js';
 import { speak, stopSpeaking, resetCloudWarning, listen, canListen, avatarSVG, animateMouth, compareWords, englishVoices, hasVoiceFor } from './speech.js';
@@ -72,23 +73,61 @@ function autoGrow(el) {
  * Botón de micrófono que escribe en un input. El texto queda en la caja para
  * revisarlo o corregirlo; no se envía solo. Si ya había texto, lo nuevo se agrega al final.
  */
+function fmtSecs(s) {
+  const t = Math.floor(s);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Graba con Azure (transcripción precisa). Devuelve { done: Promise<res|null>, stop(cancel) }.
+ * `onStatus(texto)` muestra el estado; `onLevel(v)` el volumen.
+ */
+async function azureCapture({ onStatus, onLevel, maxMs = 180000 }) {
+  const rec = await startRecording({ onLevel, onTime: (s) => onStatus?.(`🎙️ Grabando ${fmtSecs(s)} · toca ⏹️ al terminar`) });
+  let finish;
+  const done = new Promise((resolve, reject) => {
+    finish = async (cancel) => {
+      finish = null;
+      clearTimeout(timer);
+      if (cancel) {
+        rec.cancel();
+        return resolve(null);
+      }
+      try {
+        onStatus?.('⏳ Transcribiendo…');
+        resolve(await rec.stop());
+      } catch (e) {
+        reject(e);
+      }
+    };
+  });
+  const timer = setTimeout(() => finish?.(false), maxMs);
+  return { done, stop: (cancel) => finish?.(cancel) };
+}
+
+/**
+ * Botón de micrófono que escribe en un input. El texto queda en la caja para
+ * revisarlo o corregirlo; no se envía solo. Si ya había texto, lo nuevo se agrega al final.
+ * Con Azure configurado usa la transcripción precisa; si no, el reconocedor del celular.
+ */
 function attachMic(button, input, { onDone } = {}) {
-  if (!canListen) {
+  if (!canListen && !navigator.mediaDevices?.getUserMedia) {
     button.disabled = true;
-    button.title = 'Reconocimiento de voz no disponible en este navegador';
+    button.title = 'Micrófono no disponible en este navegador';
     return;
   }
   let busy = false;
   let cancelled = false;
+  let stopFn = null;
   // Al enviar mientras graba: corta el micrófono e ignora lo que llegue después.
   input.cancelMic = () => {
     if (!busy) return;
     cancelled = true;
-    listen.stop?.();
+    stopFn?.(true);
   };
   button.addEventListener('click', async () => {
     if (busy) {
-      listen.stop?.();
+      stopFn?.(false);
       return;
     }
     busy = true;
@@ -105,10 +144,26 @@ function attachMic(button, input, { onDone } = {}) {
       autoGrow(input);
     };
     button.textContent = '⏹️';
-    input.placeholder = 'Escuchando… habla con calma. Toca ⏹️ cuando termines.';
-    toast('🎤 Escuchando. Puedes hacer pausas: toca ⏹️ cuando termines.', 4000);
     try {
-      const res = await listen({ onInterim: show });
+      let res;
+      if (azureSttEnabled()) {
+        input.placeholder = '🎙️ Grabando… habla con calma. Toca ⏹️ cuando termines.';
+        toast('🎙️ Grabando (transcripción precisa). Toca ⏹️ cuando termines.', 3500);
+        const cap = await azureCapture({
+          onStatus: (t) => (input.placeholder = t),
+          onLevel: (v) => button.style.setProperty('--lvl', v.toFixed(2)),
+        });
+        stopFn = cap.stop;
+        const samples = await cap.done;
+        if (!samples || cancelled) return;
+        res = await transcribe(samples);
+        if (!res.text) toast('No se escuchó nada. Intenta de nuevo, más cerca del micrófono.', 4000);
+      } else {
+        input.placeholder = 'Escuchando… habla con calma. Toca ⏹️ cuando termines.';
+        toast('🎤 Escuchando. Puedes hacer pausas: toca ⏹️ cuando termines.', 4000);
+        stopFn = () => listen.stop?.();
+        res = await listen({ onInterim: show });
+      }
       if (cancelled) return;
       show(res.text);
       const stt = { ...res, text: input.value };
@@ -121,10 +176,16 @@ function attachMic(button, input, { onDone } = {}) {
       if (res.text) toast('Revisa el texto, corrígelo si quieres y toca ➤ para enviar. 🎤 agrega más.', 4000);
       onDone?.(stt);
     } catch (e) {
-      showError(e);
+      if (azureSttEnabled()) {
+        showError(new TutorError(`Transcripción precisa falló (${e.message}). Revisa la clave de Azure o desactívala en ⚙️ Ajustes para usar el micrófono del celular.`));
+      } else {
+        showError(e);
+      }
     } finally {
       busy = false;
+      stopFn = null;
       button.classList.remove('recording');
+      button.style.removeProperty('--lvl');
       button.textContent = label;
       input.placeholder = placeholder;
     }
@@ -203,6 +264,7 @@ function levelCardHTML() {
     <div class="level-top"><span class="level-badge">${L.level}</span>
       <div><b>Nivel estimado de gramática</b><br><small class="muted">${L.next ? `${Math.max(0, L.toNext)}% del camino a ${L.next}` : 'Nivel máximo de la app'} · ${L.mastered} temas dominados</small></div></div>
     <div class="bar"><i style="--w:${Math.round(L.overall * 100)}%"></i></div>
+    <p class="small">🗣️ <b>Nivel de speaking: ${learnerLevel()}</b> · el tutor te habla un paso arriba${settings.autoLevel !== false ? ' y lo ajusta solo según tus reuniones' : ''}. Cámbialo en ⚙️ Ajustes.</p>
     <ul class="bars">${names.map((n, i) => `<li><span>${n}</span><i style="--w:${Math.max(2, Math.round(L.byLevel[i] * 100))}%"></i><b>${Math.round(L.byLevel[i] * 100)}%</b></li>`).join('')}</ul>
     <small class="muted">Se calcula con las sesiones de gramática aprobadas (≥60%). Es una guía, no un examen oficial.</small>
   </section>`;
@@ -379,7 +441,7 @@ function renderMeetingLive() {
       <div class="stage-info">
         <strong id="speaker">${c.name}</strong>
         <small class="muted">${esc(c.role.split(". ")[0])}</small>
-        <small class="muted">${esc(meeting.config.scenario.title)}</small>
+        <small class="muted">${esc(meeting.config.scenario.title)} · nivel ${learnerLevel()}</small>
       </div>
       <div class="stage-actions">
         <button id="replay" class="mini-btn" title="Repetir">🔁</button>
@@ -500,6 +562,31 @@ function feedbackHTML(fb) {
   return parts.join('') || '<div class="fb-overall">👍 ¡Perfecto!</div>';
 }
 
+/**
+ * Ajuste automático del nivel: sube después de 2 reuniones seguidas en que el
+ * tutor recomienda subir, y baja después de 2 seguidas en que recomienda bajar.
+ */
+function adjustLevel(rec) {
+  if (!rec || settings.autoLevel === false) return;
+  const votes = [...(progress.levelVotes || []), rec].slice(-2);
+  progress.levelVotes = votes;
+  const i = LEVELS.indexOf(learnerLevel());
+  let next = null;
+  if (votes.length === 2 && votes.every((v) => v === 'up') && i < LEVELS.length - 1) next = LEVELS[i + 1];
+  if (votes.length === 2 && votes.every((v) => v === 'down') && i > 0) next = LEVELS[i - 1];
+  if (next) {
+    const up = LEVELS.indexOf(next) > i;
+    settings.level = next;
+    progress.levelVotes = [];
+    progress.levelHistory = [...(progress.levelHistory || []), { level: next, date: new Date().toISOString() }];
+    saveSettings();
+    toast(up ? `🎉 ¡Subiste tu nivel de speaking a ${next}! El tutor te hablará un poco más avanzado.` : `Bajé el nivel a ${next} para que practiques más cómoda.`, 7000);
+  } else if (rec === 'up') {
+    toast('👏 Muy bien. Una reunión más así y subes de nivel.', 5000);
+  }
+  saveProgress();
+}
+
 function recordTurn(who, text) {
   const rec = meeting.record;
   if (!rec) return;
@@ -540,6 +627,7 @@ async function meetingTurn(text, stt) {
         appendEntry(entry);
       }
       if (fb?.errors?.length) logErrors(fb.errors);
+      if (text === '[END]') adjustLevel(data.level_recommendation);
       if (fb?.new_grammar?.topic_id) markIntroduced(fb.new_grammar.topic_id);
     }
     const reply = { kind: 'them', speaker: data.speaker || meeting.character.name, text: data.reply, es: data.reply_es, pron: data.reply_pron };
@@ -917,18 +1005,37 @@ function renderPron() {
 
   if (pron.mode === 'speak') {
     const rec = $('#p-rec');
-    if (!canListen) rec.disabled = true;
+    if (!canListen && !azureSttEnabled()) rec.disabled = true;
+    let stopRec = null;
     rec.addEventListener('click', async () => {
-      if (rec.classList.contains('recording')) return listen.stop?.();
+      if (rec.classList.contains('recording')) {
+        if (stopRec) stopRec(false);
+        else listen.stop?.();
+        return;
+      }
       rec.classList.add('recording');
       rec.textContent = '⏹️ Detener';
       try {
-        toast('🎤 Lee la frase. Toca ⏹️ Detener cuando termines.', 3000);
-        const res = await listen({ onInterim: (t) => ($('#heard').textContent = `Escuché: ${t}`) });
-        showPronResult(sentence, res);
+        if (azureSttEnabled()) {
+          // Evaluación de pronunciación real con Azure, palabra por palabra.
+          toast('🎙️ Lee la frase y toca ⏹️ Detener.', 3000);
+          const cap = await azureCapture({ onStatus: (t) => ($('#heard').textContent = t), maxMs: 30000 });
+          stopRec = cap.stop;
+          const samples = await cap.done;
+          stopRec = null;
+          if (!samples) return;
+          $('#heard').textContent = '⏳ Evaluando tu pronunciación…';
+          showAzurePron(item, await assessPronunciation(samples, sentence));
+        } else {
+          toast('🎤 Lee la frase. Toca ⏹️ Detener cuando termines.', 3000);
+          const res = await listen({ onInterim: (t) => ($('#heard').textContent = `Escuché: ${t}`) });
+          showPronResult(sentence, res);
+        }
       } catch (e) {
         showError(e);
+        $('#heard').textContent = '';
       } finally {
+        stopRec = null;
         rec.classList.remove('recording');
         rec.textContent = '🎤 Leer en voz alta';
       }
@@ -939,6 +1046,42 @@ function renderPron() {
       $('#p-result').innerHTML = `<p class="score">${score}%</p><p class="words">${result.map((r) => `<span class="${r.ok ? 'ok' : 'bad'}">${esc(r.word)}</span>`).join(' ')}</p><p><small class="muted">🇪🇸 ${esc(item.es)}</small><br><small class="pron">🗣️ ${esc(item.pron)}</small></p>`;
     });
   }
+}
+
+/** Resultado de la evaluación de Azure: puntajes y cada palabra coloreada. */
+function showAzurePron(item, a) {
+  (progress.pron[pron.set.id] ||= []).push(a.pron || a.accuracy);
+  saveProgress();
+  const cls = (w) => (w.error === 'Omission' ? 'bad' : w.error === 'Insertion' ? 'meh' : w.accuracy >= 80 ? 'ok' : w.accuracy >= 60 ? 'meh' : 'bad');
+  const errName = { Mispronunciation: 'mal pronunciada', Omission: 'te la saltaste', Insertion: 'palabra extra', UnexpectedBreak: 'pausa inesperada', MissingBreak: 'faltó pausa', Monotone: 'tono plano' };
+  const weak = a.words.filter((w) => cls(w) !== 'ok');
+  $('#heard').textContent = `Escuché: "${a.text}"`;
+  $('#p-result').innerHTML = `
+    <p class="score">${a.pron || a.accuracy}%</p>
+    <div class="pa-scores"><span>Precisión <b>${a.accuracy}</b></span><span>Fluidez <b>${a.fluency}</b></span><span>Completitud <b>${a.completeness}</b></span></div>
+    <p class="words">${a.words.map((w) => `<span class="${cls(w)}" title="${w.accuracy}%">${esc(w.word)}</span>`).join(' ')}</p>
+    <p class="muted small">🟢 bien · 🟡 mejorable · 🔴 a practicar. Toca una palabra para escucharla.</p>
+    ${weak.length ? `<ul class="fb-errors">${weak.map((w) => `<li><b>${esc(w.word)}</b> — ${w.accuracy}%${w.error !== 'None' ? ` (${errName[w.error] || w.error})` : ''}</li>`).join('')}</ul>` : '<p>🎉 ¡Todas las palabras bien pronunciadas!</p>'}
+    <button id="p-ai" class="secondary">🤖 ¿Cómo mejoro estas palabras?</button>
+    <div id="p-ai-out"></div>`;
+  view.querySelectorAll('#p-result .words span').forEach((el) => el.addEventListener('click', () => speak(el.textContent, { lang: pron.accent })));
+  $('#p-ai').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Analizando…';
+    try {
+      const { data } = await askJSON({
+        system: pronSystem(),
+        messages: [{ role: 'user', content: `Target sentence: "${item.en}"\nPronunciation assessment (Azure, 0-100): accuracy ${a.accuracy}, fluency ${a.fluency}, completeness ${a.completeness}.\nWords: ${a.words.map((w) => `${w.word} ${w.accuracy}${w.error !== 'None' ? ` ${w.error}` : ''}`).join(', ')}\nSound being practised: ${pron.set.title}. Explain how to fix the weakest words.` }],
+        schema: PRON_FEEDBACK_SCHEMA,
+      });
+      $('#p-ai-out').innerHTML = `${md(data.summary_es)}<ul>${data.issues.map((i) => `<li><b>${esc(i.word)}</b>: ${esc(i.likely_problem_es)}<br><small>${esc(i.tip_es)}</small></li>`).join('')}</ul>`;
+      e.target.remove();
+    } catch (err) {
+      showError(err);
+      e.target.disabled = false;
+      e.target.textContent = '🤖 ¿Cómo mejoro estas palabras?';
+    }
+  });
 }
 
 function showPronResult(sentence, res) {
@@ -1213,9 +1356,12 @@ function openSettings() {
   $('#set-rate').value = settings.rate;
   $('#rate-out').textContent = settings.rate;
   $('#set-hide').checked = settings.hideReplyText;
+  $('#set-level').value = learnerLevel();
+  $('#set-autolevel').checked = settings.autoLevel !== false;
   $('#set-gkey').value = settings.googleKey || '';
   $('#set-akey').value = settings.azureKey || '';
   $('#set-aregion').value = settings.azureRegion || '';
+  $('#set-precise').checked = settings.preciseStt !== false;
   $('#set-provider').value = settings.ttsProvider || 'azure';
   showProvider();
   $('#set-cloud').checked = settings.cloudVoices !== false;
@@ -1236,10 +1382,14 @@ $('#set-save').addEventListener('click', () => {
   settings.recogLang = $('#set-recog').value;
   settings.rate = Number($('#set-rate').value);
   settings.hideReplyText = $('#set-hide').checked;
+  if (settings.level !== $('#set-level').value) progress.levelVotes = [];
+  settings.level = $('#set-level').value;
+  settings.autoLevel = $('#set-autolevel').checked;
   settings.voiceOverrides = { 'en-AU': $('#set-voice-au').value, 'en-IN': $('#set-voice-in').value };
   settings.googleKey = $('#set-gkey').value.trim();
   settings.azureKey = $('#set-akey').value.trim();
   settings.azureRegion = $('#set-aregion').value.trim();
+  settings.preciseStt = $('#set-precise').checked;
   const prevProvider = settings.ttsProvider;
   settings.ttsProvider = $('#set-provider').value;
   settings.cloudVoices = $('#set-cloud').checked;

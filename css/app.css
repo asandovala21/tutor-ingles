@@ -274,3 +274,9 @@ details.card[open] > summary::after { content: '▴'; }
 .quiz li.correct { border-left: 4px solid var(--ok); padding-left: 8px; }
 .quiz li.wrong { border-left: 4px solid var(--bad); padding-left: 8px; }
 .why { display: block; margin-top: 4px; }
+
+/* transcripción precisa y evaluación de pronunciación */
+.mic.recording { animation: none; box-shadow: 0 0 0 calc(4px + var(--lvl, 0.2) * 18px) rgba(198, 40, 40, .25); transition: box-shadow .1s; }
+.words .meh { color: #fff; background: var(--meh); }
+.pa-scores { display: flex; gap: 12px; flex-wrap: wrap; font-size: .9rem; color: var(--muted); }
+.pa-scores b { color: var(--text); }

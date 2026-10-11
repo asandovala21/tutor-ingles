@@ -38,6 +38,15 @@
         <select id="set-model"></select>
         <small>Opus responde mejor; Haiku cuesta ~40 veces menos.</small>
       </label>
+      <label>Mi nivel de speaking
+        <select id="set-level">
+          <option value="A1">A1 · principiante (el tutor me habla en A2 muy simple)</option>
+          <option value="A2">A2 · básico (el tutor me habla en B1 simple)</option>
+          <option value="B1">B1 · intermedio (el tutor me habla en B1+/B2)</option>
+          <option value="B2">B2 · avanzado (inglés natural)</option>
+        </select>
+      </label>
+      <label class="check"><input id="set-autolevel" type="checkbox" /> Ajustar el nivel solo a medida que mejoro</label>
       <label>Tu nombre en las transcripciones (opcional)
         <input id="set-name" type="text" placeholder="p. ej. Andrea Sandoval" />
       </label>
@@ -68,6 +77,7 @@
           <label>Región de Azure
             <input id="set-aregion" type="text" autocomplete="off" placeholder="p. ej. eastus, brazilsouth, australiaeast" />
           </label>
+          <label class="check"><input id="set-precise" type="checkbox" /> Transcripción precisa con Azure (micrófono y evaluación de pronunciación; 5 horas gratis al mes)</label>
         </div>
         <div id="prov-google">
           <label>API key de Google Cloud

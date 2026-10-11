@@ -1,9 +1,9 @@
 // Service worker: guarda la app para que abra rápido y funcione la parte offline
 // (la conversación con Claude siempre necesita internet).
-const CACHE = 'tutor-ingles-v13';
+const CACHE = 'tutor-ingles-v14';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
-  'js/app.js', 'js/claude.js', 'js/curriculum.js', 'js/prompts.js', 'js/speech.js', 'js/store.js', 'js/pdf.js', 'js/cloudtts.js', 'js/tenses.js',
+  'js/app.js', 'js/claude.js', 'js/curriculum.js', 'js/prompts.js', 'js/speech.js', 'js/store.js', 'js/pdf.js', 'js/cloudtts.js', 'js/tenses.js', 'js/azurestt.js',
   'vendor/anthropic-sdk.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

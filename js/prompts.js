@@ -1,6 +1,6 @@
 // Prompts de sistema y esquemas JSON para cada modo.
 import { KNOWN_GRAMMAR, GRAMMAR_TOPICS, MAX_SESSIONS, topicById } from './curriculum.js';
-import { progress } from './store.js';
+import { progress, settings } from './store.js';
 import { TENSE_USES, TENSE_COMPARISONS } from './tenses.js';
 
 const LEARNER_PROFILE = `The learner is a Spanish-speaking professional from Chile who works in Data & Digital (Technology, BHP Minerals Americas, sites like Escondida and Spence). Their meetings in English are with global teams in Australia (data utilities / data engineering, platform and architecture teams, cybersecurity, project managers) and with vendors. Many Australian colleagues are Indian-Australian. Typical topics: integrating vendor APIs and equipment data into Snowflake (RAW / QA / Conformed layers), data paths from mobile equipment to the cloud (OT / IT / DMZ, VPN, LTE networks, field gateways), 1 Hz data vs batch vs real-time, data volume and completeness, support models (global vs local, knowledge transfer, transition to operations), governance (HLD, architecture panel, CIA rating, cybersecurity assessments), cost estimates and vendor quotes, data quality, reusable ingestion patterns, project status updates, and following up on open actions.
@@ -42,16 +42,44 @@ function learningBlock() {
 // Pronunciación escrita para hispanohablantes (igual que en las frases fijas de la app).
 const PRON_GUIDE = `Approximate pronunciation written for a Spanish (Chilean) reader: hyphenated syllables, the stressed syllable in CAPITALS, Spanish spelling for sounds (e.g. "I have a question" -> "ai jav a KUES-chon", "data" -> "DEI-ta", "schedule" -> "SKE-yul"). Conventions: "z" = th as in think, "dh" = th as in this, "j" = soft English h, "ii"/"uu" = long vowels, "sh" as in share, "y" for the j/y sounds of "job"/"yes".`;
 
+// ---------------- Nivel del alumno ----------------
+// El tutor habla UN paso arriba del nivel de speaking del alumno (input comprensible, i+1).
+const LEVEL_GUIDES = {
+  A1: `The learner's SPEAKING level is A1 (beginner): they understand more than they can say, build short sentences slowly and make basic mistakes. Speak to them at an easy A2 level:
+- Very short sentences (about 6-12 words), one idea per sentence, max 2-3 sentences per turn, and only ONE question per turn.
+- Very common words. Mostly present simple, present continuous, past simple, will / going to, can. Use present perfect only in simple forms ("I have finished", "Have you sent it?").
+- Avoid idioms, phrasal verbs and slang. At most one easy Australian expression per turn (no worries, mate, cheers).
+- Corrections and suggestions must be at A2 level: short and simple, close to what the learner said. Never offer a long or advanced native sentence.
+- Introduce new grammar very slowly, starting with the easiest gaps: small words (yet, still, already, just, else, ever, again), there was/were, can/could, present perfect basics, past continuous.`,
+  A2: `The learner's SPEAKING level is A2: simple sentences, frequent mistakes with tenses and small words. Speak to them at an easy B1 level:
+- Short, clear sentences (up to ~15 words), 2-4 sentences per turn, one or two questions per turn.
+- Common words and simple work vocabulary. All basic tenses plus present perfect, past continuous, first conditional. Common phrasal verbs only if they are very frequent (set up, follow up) and clear from context.
+- Corrections and suggestions at B1 level: natural but simple, one step above what the learner said.
+- Introduce grammar gradually (one point every 3-4 turns).`,
+  B1: `The learner's SPEAKING level is B1: they can hold a conversation with mistakes. Speak to them at a B1+/B2 level: natural professional English with clear structure, common phrasal verbs and some Australian expressions. Suggestions can be more natural, but keep them sayable for a B1 speaker.`,
+  B2: `The learner's SPEAKING level is B2: fluent with some errors. Speak naturally like a real colleague, with real Australian/Indian-Australian expressions. Suggestions can be fully natural and diplomatic.`,
+};
+export const LEVELS = ['A1', 'A2', 'B1', 'B2'];
+
+export function learnerLevel() {
+  return LEVELS.includes(settings.level) ? settings.level : 'A1';
+}
+
+function levelBlock() {
+  return `## Learner level (IMPORTANT, adapt everything to this)\n${LEVEL_GUIDES[learnerLevel()]}`;
+}
+
 // ---------------- Simulación de reuniones ----------------
 
 export const MEETING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['speaker', 'reply', 'reply_es', 'reply_pron', 'feedback'],
+  required: ['speaker', 'reply', 'reply_es', 'reply_pron', 'feedback', 'level_recommendation'],
   properties: {
     speaker: { type: 'string', description: 'Name of the participant who speaks this turn.' },
     reply: { type: 'string', description: 'What the participant says out loud, in English. 1-4 sentences, natural spoken style.' },
     reply_es: { type: 'string', description: 'Natural Spanish translation of reply.' },
+    level_recommendation: { type: 'string', enum: ['up', 'same', 'down'] },
     reply_pron: { type: 'string', description: 'Approximate pronunciation of reply for a Spanish reader.' },
     feedback: {
       type: 'object',
@@ -119,7 +147,7 @@ ${LEARNER_PROFILE}
 Name: ${character.name}
 Role: ${character.role}
 Speaking style: ${character.style}
-Speak the way this person really speaks in a BHP Teams meeting: natural, realistic pace of ideas, short spoken turns (1-4 sentences), with fillers and expressions typical of the accent. Ask follow-up questions that force the learner to talk. Push back sometimes, ask for numbers, dates and reasons, like a real meeting. Don't lecture inside the role-play: corrections go ONLY in the feedback object, never in "reply".
+Speak the way this person speaks in a BHP Teams meeting, BUT always adapted to the learner's level described below (simple and clear for low levels; more natural for higher levels). Ask follow-up questions that force the learner to talk. Push back sometimes, ask for numbers, dates and reasons, like a real meeting. Don't lecture inside the role-play: corrections go ONLY in the feedback object, never in "reply".
 
 ## Meeting
 ${transcript
@@ -135,15 +163,17 @@ reply_es: a natural Spanish translation of your reply. reply_pron, corrected_pro
 
 ## Feedback rules (the "feedback" object, after each learner turn)
 - overall_es: 1-2 short sentences in Spanish: what was good and the main thing to improve. Encouraging but honest.
-- corrected: the learner's utterance with grammar fixed minimally (empty string if it was already correct).
-- better_native: how a fluent professional at BHP would say it (more natural / diplomatic).
-- errors: every real grammar/vocabulary error with a short Spanish explanation. grammar_topic must be the most specific curriculum id above (there are also review ids for basics such as present-simple, past-simple, questions-word-order, subject-verb, countable-another, articles, prepositions, false-friends), or "vocab" for word choice.
-- new_grammar: THIS IS KEY. Use the correction moment to introduce ONE grammar point from the curriculum that the learner has NOT been introduced to yet (see progress), preferably one that fits what they just tried to say, and prefer level-1 topics first (e.g. they said "I work here since 2020" -> introduce present perfect continuous). Explain it briefly in Spanish with 2 BHP examples. Then in your next turns, use that structure in your "reply" and ask questions that make the learner use it. If no new point fits naturally this turn, return topic_id "" and empty fields. Don't introduce a new point every single turn: about every 2-3 turns is right.
+- corrected: the learner's utterance with grammar fixed minimally, keeping their words (empty string if it was already correct).
+- better_native: a slightly better way to say it, only ONE step above the learner's level (see learner level): short, simple and sayable for them. Not an advanced native sentence. Empty string if "corrected" is already good enough for their level.
+- errors: the real grammar/vocabulary errors (for A1/A2 learners, only the 2-3 most important ones for being understood) with a short Spanish explanation. grammar_topic must be the most specific curriculum id above (there are also review ids for basics such as present-simple, past-simple, questions-word-order, subject-verb, countable-another, articles, prepositions, false-friends), or "vocab" for word choice.
+- new_grammar: THIS IS KEY. Use the correction moment to introduce ONE grammar point from the curriculum that the learner has NOT been introduced to yet (see progress), preferably one that fits what they just tried to say, and choose topics suited to the learner's level (for A1/A2 start with the easiest ones: small-words, there-be, questions-word-order, countable-another, present-perfect basics, past-continuous) (e.g. they said "I work here since 2020" -> introduce present perfect continuous). Explain it briefly in Spanish with 2 BHP examples. Then in your next turns, use that structure in your "reply" and ask questions that make the learner use it. If no new point fits naturally this turn, return topic_id "" and empty fields. Don't introduce a new point every single turn: about every 3-4 turns for A1/A2, every 2-3 turns for B1+. Keep the explanation very short and simple.
 - pronunciation: the learner's text comes from speech recognition. Words that the recognizer got wrong or with low confidence probably reveal pronunciation problems (typical Spanish-speaker issues: th, v/b, short i vs long ee, -ed endings, initial s+consonant, schwa, word stress, h). Give 0-3 tips in Spanish for words that matter. Empty array if typed or nothing notable.
 - When the user message is [START], open the meeting naturally (greeting + small talk or first agenda item), with empty feedback (empty strings and arrays, new_grammar.topic_id "").
-- When the user message is [END], close the meeting politely in "reply", and in feedback.overall_es give a summary in Spanish of the whole session: strengths, top 3 recurring mistakes, grammar introduced and what to practise next.`;
+- When the user message is [END], close the meeting politely in "reply", and in feedback.overall_es give a summary in Spanish of the whole session: strengths, top 3 recurring mistakes, grammar introduced and what to practise next. Also set level_recommendation: "up" only if the learner clearly spoke above their current level during the whole meeting (longer correct sentences, few basic mistakes), "down" if they struggled a lot to understand or answer, otherwise "same". On normal turns always return "same".`;
 
-  const volatile = `${progressBlock()}
+  const volatile = `${levelBlock()}
+
+${progressBlock()}
 ${focusTopic ? `\nFocus for this meeting: steer the conversation so the learner needs to use "${topicById(focusTopic)?.title}". Use it yourself in your replies and correct it carefully.` : ''}`;
 
   return [
@@ -212,7 +242,7 @@ export function lessonSystem() {
       text: `You are an expert English grammar teacher creating short, practical lessons for a BHP professional.\n\n${LEARNER_PROFILE}\n\nEach topic has at most ${MAX_SESSIONS} sessions. Make every example and exercise about the learner's real work: Teams meetings with Perth/Brisbane, data integration, APIs, Snowflake, architecture, vendors, support models, governance, project status, emails and follow-ups. Be concise: a lesson should take about 10 minutes. Explanations must be complete and clear: the form (affirmative, negative, question, contractions), EVERY main use with a short example, time expressions, and the contrast with similar structures. For each example give the Spanish translation and the pronunciation. ${PRON_GUIDE}`,
       cache_control: { type: 'ephemeral' },
     },
-    { type: 'text', text: progressBlock() },
+    { type: 'text', text: `${levelBlock()}\nExplanations in very simple Spanish. Examples and exercises must use sentences the learner can actually say at this level (one step above at most), even for advanced tenses.\n\n${progressBlock()}` },
   ];
 }
 
@@ -383,6 +413,6 @@ ${LEARNER_PROFILE}
     : '';
   return [
     { type: 'text', text: stable, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: `${learningBlock()}${recentMeetings}` },
+    { type: 'text', text: `${levelBlock()}\nKeep English examples at this level (one step above at most) unless they ask for something more advanced.\n\n${learningBlock()}${recentMeetings}` },
   ];
 }
